@@ -1,19 +1,74 @@
-import { Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ScrollView, View } from 'react-native';
 
-import { useAppStore } from '@/store';
+import { SafeNativeAd } from '@/components/ads/SafeNativeAd';
+import { ActiveMarketDashboard } from '@/components/ActiveMarketDashboard';
+import { DashboardIdentityHeader } from '@/components/DashboardIdentityHeader';
+import { GlobalSettingsModal } from '@/components/GlobalSettingsModal';
+import { Leaderboard } from '@/components/Leaderboard';
+import { Navbar } from '@/components/Navbar';
+import { useMarketStore } from '@/store/marketStore';
+import { useThemeStore } from '@/store/themeStore';
+import { useBreakpoint } from '@/hooks/useBreakpoint';
 
-export default function TabOneScreen() {
-  const activeMarket = useAppStore((s) => s.activeMarket);
+export default function GlobalMarketHome() {
+  const { isNavRail: isWide } = useBreakpoint();
+  const activeMarket = useMarketStore((s) => s.activeMarket);
+  const palette = useThemeStore((s) => s.palette);
+
+  const [indiaWatchlistOpen, setIndiaWatchlistOpen] = useState(false);
+
+  const onIndiaWatchlistOpenChange = useCallback((open: boolean) => {
+    setIndiaWatchlistOpen(open);
+  }, []);
+
+  useEffect(() => {
+    if (activeMarket !== 'INDIA') {
+      setIndiaWatchlistOpen(false);
+    }
+  }, [activeMarket]);
 
   return (
-    <View className="flex-1 items-center justify-center bg-neutral-950 px-6">
-      <Text className="text-center text-2xl font-bold text-emerald-400">The Atharva Capital</Text>
-      <Text className="mt-2 text-center text-sm text-neutral-400">
-        Virtual Trading Universe · Foundation
-      </Text>
-      <Text className="mt-6 rounded-lg border border-emerald-500/30 bg-neutral-900 px-4 py-2 text-xs text-neutral-300">
-        Active market (store): {activeMarket}
-      </Text>
+    <View className="flex-1 font-sans" style={{ backgroundColor: palette.bg }}>
+      <Navbar
+        isWide={isWide}
+        showWatchlistTrigger={activeMarket === 'INDIA' && !isWide}
+        onOpenWatchlist={() => setIndiaWatchlistOpen(true)}
+      />
+
+      <ScrollView
+        className="min-h-0 flex-1"
+        nestedScrollEnabled
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}>
+        <DashboardIdentityHeader />
+        <View style={{ paddingHorizontal: 16, gap: 0 }}>
+          <SafeNativeAd slotId={1} />
+          <SafeNativeAd slotId={2} />
+        </View>
+        <View style={{ minHeight: 420 }}>
+          <ActiveMarketDashboard
+            market={activeMarket}
+            isWide={isWide}
+            indiaWatchlistOpen={indiaWatchlistOpen}
+            onIndiaWatchlistOpenChange={onIndiaWatchlistOpenChange}
+          />
+        </View>
+        <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
+          <SafeNativeAd slotId={3} />
+          <SafeNativeAd slotId={4} />
+        </View>
+      </ScrollView>
+
+      <ScrollView
+        className="max-h-[280px] shrink-0 border-t"
+        style={{ borderTopColor: palette.border }}
+        nestedScrollEnabled
+        showsVerticalScrollIndicator={false}>
+        <Leaderboard />
+      </ScrollView>
+
+      <GlobalSettingsModal />
     </View>
   );
 }

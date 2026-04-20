@@ -1,59 +1,110 @@
-import React from 'react';
+import { BottomTabBar, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { Tabs } from 'expo-router';
+import { useCallback, useMemo, type ComponentProps } from 'react';
+import { View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Link, Tabs } from 'expo-router';
-import { Pressable } from 'react-native';
 
-import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
+import { DesktopSideNav } from '@/components/DesktopSideNav';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
+import { useBreakpoint } from '@/hooks/useBreakpoint';
+import { AdRotatorProvider } from '@/hooks/useAdRotator';
 
-// You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
 function TabBarIcon(props: {
-  name: React.ComponentProps<typeof FontAwesome>['name'];
+  name: ComponentProps<typeof FontAwesome>['name'];
   color: string;
 }) {
   return <FontAwesome size={28} style={{ marginBottom: -3 }} {...props} />;
 }
 
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
+function TabLayoutInner() {
+  const { isNavRail } = useBreakpoint();
+  const headerShown = useClientOnlyValue(false, true);
+
+  const renderTabBar = useCallback(
+    (props: BottomTabBarProps) => (isNavRail ? null : <BottomTabBar {...props} />),
+    [isNavRail]
+  );
+
+  const screenOptions = useMemo(
+    () => ({
+      tabBarActiveTintColor: '#ff6a00',
+      tabBarInactiveTintColor: '#737373',
+      tabBarStyle: { backgroundColor: '#0a0a0a', borderTopColor: '#262626' },
+      headerShown,
+      tabBar: renderTabBar,
+    }),
+    [headerShown, renderTabBar]
+  );
 
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Tab One',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
-          headerRight: () => (
-            <Link href="/modal" asChild>
-              <Pressable>
-                {({ pressed }) => (
-                  <FontAwesome
-                    name="info-circle"
-                    size={25}
-                    color={Colors[colorScheme ?? 'light'].text}
-                    style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="two"
-        options={{
-          title: 'Tab Two',
-          tabBarIcon: ({ color }) => <TabBarIcon name="code" color={color} />,
-        }}
-      />
-    </Tabs>
+    <AdRotatorProvider>
+      <View style={{ flex: 1, flexDirection: 'row' }}>
+        {isNavRail ? <DesktopSideNav /> : null}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Tabs screenOptions={screenOptions}>
+            <Tabs.Screen
+              name="index"
+              options={{
+                title: 'Markets',
+                headerShown: false,
+                tabBarIcon: ({ color }) => <TabBarIcon name="line-chart" color={color} />,
+              }}
+            />
+            <Tabs.Screen
+              name="crypto"
+              options={{
+                title: 'Crypto',
+                headerShown: false,
+                tabBarIcon: ({ color }) => <TabBarIcon name="btc" color={color} />,
+              }}
+            />
+            <Tabs.Screen
+              name="dashboard"
+              options={{
+                title: 'Dash',
+                headerShown: false,
+                tabBarIcon: ({ color }) => <TabBarIcon name="bar-chart" color={color} />,
+              }}
+            />
+            <Tabs.Screen
+              name="wallet"
+              options={{
+                title: 'Wallet',
+                headerShown: false,
+                tabBarIcon: ({ color }) => <TabBarIcon name="money" color={color} />,
+              }}
+            />
+            <Tabs.Screen
+              name="leaderboard"
+              options={{
+                title: 'Board',
+                headerShown: false,
+                tabBarIcon: ({ color }) => <TabBarIcon name="trophy" color={color} />,
+              }}
+            />
+            <Tabs.Screen
+              name="journal"
+              options={{
+                title: 'Journal',
+                headerShown: false,
+                tabBarIcon: ({ color }) => <TabBarIcon name="book" color={color} />,
+              }}
+            />
+            <Tabs.Screen
+              name="alerts"
+              options={{
+                title: 'Alerts',
+                headerShown: false,
+                tabBarIcon: ({ color }) => <TabBarIcon name="bell" color={color} />,
+              }}
+            />
+          </Tabs>
+        </View>
+      </View>
+    </AdRotatorProvider>
   );
+}
+
+export default function TabLayout() {
+  return <TabLayoutInner />;
 }
