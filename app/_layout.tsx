@@ -49,6 +49,8 @@ export const unstable_settings = {
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
+const WEB_SHELL_BG = '#0b0e11';
+
 export default function RootLayout() {
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
@@ -60,6 +62,18 @@ export default function RootLayout() {
     JetBrainsMono_400Regular,
     JetBrainsMono_500Medium,
   });
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.style.background = WEB_SHELL_BG;
+    document.body.style.background = WEB_SHELL_BG;
+    document.body.style.margin = '0';
+    const root = document.getElementById('root');
+    if (root) {
+      root.style.backgroundColor = WEB_SHELL_BG;
+      root.style.minHeight = '100%';
+    }
+  }, []);
 
   useEffect(() => {
     if (error && __DEV__) {

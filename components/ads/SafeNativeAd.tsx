@@ -19,6 +19,10 @@ import { T } from '@/src/constants/theme';
 
 const PAD = 12;
 
+function canInjectWebAds(): boolean {
+  return Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined';
+}
+
 /** Adaptive A-ADS unit: stable layout band (iframe is height:100% of this box). */
 const SLOT_2_AD_MIN_H = 100;
 const SLOT_2_AD_MAX_H = 250;
@@ -82,7 +86,7 @@ function WebSlotInject({ slotId }: { slotId: 1 }) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    if (!canInjectWebAds()) return;
     if (!cfg.scriptSrc || !cfg.containerId) return;
 
     const host = ref.current as unknown as HTMLElement | null;
@@ -184,7 +188,7 @@ function WebSlot2AAds() {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    if (!canInjectWebAds()) return;
 
     const host = ref.current as unknown as HTMLElement | null;
     if (!host) return;
@@ -328,7 +332,7 @@ export type SafeNativeAdProps = {
   slotId: NativeSlotId;
 };
 
-class SafeNativeAdRenderBoundary extends Component<{ slotId: NativeSlotId; children: ReactNode }, { err: boolean }> {
+export class SafeNativeAdRenderBoundary extends Component<{ slotId: NativeSlotId; children: ReactNode }, { err: boolean }> {
   state = { err: false };
 
   static getDerivedStateFromError() {

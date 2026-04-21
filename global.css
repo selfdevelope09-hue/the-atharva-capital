@@ -3,10 +3,20 @@
 @tailwind utilities;
 
 @layer base {
+  /* Match app shell (Exness-style) — beats Expo’s default white/black body before JS hydrates (avoids blank flash on Vercel). */
+  html,
+  body,
+  #root {
+    background-color: #0b0e11 !important;
+    margin: 0;
+  }
   html {
     font-family: Inter_400Regular, ui-sans-serif, system-ui, sans-serif;
   }
   body {
     font-family: inherit;
+  }
+  #root {
+    min-height: 100%;
   }
 }

@@ -37,7 +37,7 @@ export class AppRootErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <View style={{ flex: 1, backgroundColor: T.bg0, justifyContent: 'center', padding: 24 }}>
+        <View style={{ flex: 1, backgroundColor: '#0b0e11', justifyContent: 'center', padding: 24 }}>
           <Text style={{ color: T.text0, fontSize: 18, fontWeight: '800' }}>Something went wrong</Text>
           <Text style={{ color: T.text3, fontSize: 13, marginTop: 8 }}>
             The app hit a JavaScript error. Details below — you can try reloading.
@@ -73,7 +73,7 @@ export function RootLoadingScreen() {
     <View
       style={{
         flex: 1,
-        backgroundColor: T.bg0,
+        backgroundColor: '#0b0e11',
         alignItems: 'center',
         justifyContent: 'center',
       }}
@@ -89,7 +89,7 @@ type FontErrProps = { error: Error | null };
 export function RootFontErrorScreen({ error }: FontErrProps) {
   const msg = error?.message ?? 'Font loading failed';
   return (
-    <View style={{ flex: 1, backgroundColor: T.bg0, justifyContent: 'center', padding: 24 }}>
+    <View style={{ flex: 1, backgroundColor: '#0b0e11', justifyContent: 'center', padding: 24 }}>
       <Text style={{ color: T.text0, fontSize: 18, fontWeight: '800' }}>Could not load fonts</Text>
       <Text style={{ color: T.text2, fontSize: 13, marginTop: 10 }}>{msg}</Text>
       <Pressable
