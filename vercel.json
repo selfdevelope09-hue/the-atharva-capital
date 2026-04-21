@@ -14,7 +14,10 @@
     },
     {
       "source": "/sw.js",
-      "headers": [{ "key": "Service-Worker-Allowed", "value": "/" }]
+      "headers": [
+        { "key": "Service-Worker-Allowed", "value": "/" },
+        { "key": "Content-Type", "value": "application/javascript" }
+      ]
     }
   ]
 }

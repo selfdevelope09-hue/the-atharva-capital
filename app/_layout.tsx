@@ -16,7 +16,7 @@ import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import '../global.css';
@@ -100,6 +100,33 @@ export default function RootLayout() {
     if (root) {
       root.style.backgroundColor = WEB_SHELL_BG;
       root.style.minHeight = '100%';
+    }
+  }, []);
+
+  // Monetag ads — web only, wrapped in try/catch so any ad error never crashes the app
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+
+    try {
+      const script = document.createElement('script');
+      script.src = 'https://quge5.com/88/tag.min.js';
+      script.setAttribute('data-zone', '232062');
+      script.async = true;
+      script.setAttribute('data-cfasync', 'false');
+      document.head.appendChild(script);
+    } catch (e) {
+      console.log('[Monetag] ad script load failed:', e);
+    }
+
+    try {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker
+          .register('/sw.js')
+          .then(() => console.log('[SW] registered'))
+          .catch((err) => console.log('[SW] error:', err));
+      }
+    } catch (e) {
+      console.log('[Monetag] SW registration failed:', e);
     }
   }, []);
 
