@@ -12,14 +12,22 @@ export function generateCoolTraderUsername(): string {
 }
 
 /**
- * Silent anonymous sign-in + first-run Firestore profile (`users/{uid}`).
- * Safe to call once after fonts / shell are ready.
+ * Boot sequence: if a real (non-anonymous) user is already signed in just refresh their
+ * `lastSeenAt`. Otherwise sign in anonymously so Firestore rules have a uid to work with —
+ * the user will be prompted to log in via the login screen.
  */
 export async function bootFirebaseAuthAndProfile(): Promise<void> {
   if (!isFirebaseConfigured || !auth || !db) {
     if (__DEV__) {
       console.warn('[Firebase] Missing EXPO_PUBLIC_FIREBASE_* env; skipping anonymous auth.');
     }
+    return;
+  }
+
+  // If a real account is already persisted, don't sign them out with signInAnonymously.
+  if (auth.currentUser && !auth.currentUser.isAnonymous) {
+    const uid = auth.currentUser.uid;
+    await setDoc(doc(db, 'users', uid), { lastSeenAt: serverTimestamp() }, { merge: true });
     return;
   }
 

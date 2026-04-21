@@ -13,7 +13,7 @@ import {
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { View } from 'react-native';
@@ -31,27 +31,53 @@ import { MarketDataRouter } from '@/components/MarketDataRouter';
 import { useColorScheme } from '@/components/useColorScheme';
 import { PriceProvider } from '@/contexts/PriceContext';
 import { UnifiedMarketsPriceProvider } from '@/contexts/UnifiedMarketsPriceContext';
+import { isFirebaseConfigured } from '@/config/firebaseConfig';
 import { bootFirebaseAuthAndProfile } from '@/services/firebase/bootAuth';
 import { useAppLaunchStore } from '@/store/appLaunchStore';
 import { useInterstitialUiStore } from '@/store/interstitialUiStore';
+import { useProfileStore } from '@/store/profileStore';
 import { useThemeStore } from '@/store/themeStore';
 
 let rootLaunchIncrementedThisJsContext = false;
 
 export {
-  // Catch any errors thrown by the Layout component.
   ErrorBoundary,
 } from 'expo-router';
 
 export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
   initialRouteName: '(tabs)',
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 const WEB_SHELL_BG = '#0b0e11';
+
+/**
+ * Auth guard rendered inside the Expo Router tree.
+ * Waits for `authInitialized` so we never redirect before the first auth callback fires.
+ */
+function AuthGuard() {
+  const authInitialized = useProfileStore((s) => s.authInitialized);
+  const firebaseUser = useProfileStore((s) => s.firebaseUser);
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!authInitialized) return;
+    if (!isFirebaseConfigured) return;
+
+    const inLoginPage = segments[0] === 'login';
+    const isRealUser = Boolean(firebaseUser && !firebaseUser.isAnonymous);
+
+    if (!isRealUser && !inLoginPage) {
+      router.replace('/login');
+    } else if (isRealUser && inLoginPage) {
+      router.replace('/(tabs)');
+    }
+  }, [authInitialized, firebaseUser, segments, router]);
+
+  return null;
+}
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
@@ -89,22 +115,38 @@ export default function RootLayout() {
     }
   }, [loaded]);
 
-  if (error) {
-    return <RootFontErrorScreen error={error} />;
-  }
-
-  if (!loaded) {
-    return <RootLoadingScreen />;
-  }
-
+  /**
+   * Providers are hoisted ABOVE the font-loading gate so they're always mounted.
+   * This prevents any "hook called outside provider" crash during static HTML
+   * hydration, where pre-rendered screen content may try to access context before
+   * the provider mounts.
+   */
   return (
     <AppRootErrorBoundary>
-      <RootLayoutNav />
+      <SafeAreaProvider>
+        <UnifiedMarketsPriceProvider>
+          <PriceProvider>
+            {/* Null-rendering side-effect components that use provider hooks */}
+            <AlertPriceMonitor />
+            <AuthProfileBridge />
+            <InAppToastHost />
+            <MarketDataRouter />
+
+            {error ? (
+              <RootFontErrorScreen error={error} />
+            ) : !loaded ? (
+              <RootLoadingScreen />
+            ) : (
+              <AppContent />
+            )}
+          </PriceProvider>
+        </UnifiedMarketsPriceProvider>
+      </SafeAreaProvider>
     </AppRootErrorBoundary>
   );
 }
 
-function RootLayoutNav() {
+function AppContent() {
   const colorScheme = useColorScheme();
 
   useEffect(() => {
@@ -129,28 +171,19 @@ function RootLayoutNav() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <AuthProfileBridge />
-      <InAppToastHost />
-      <MarketDataRouter />
-      <UnifiedMarketsPriceProvider>
-        {/* AlertPriceMonitor must live inside the provider — it calls useUnifiedMarketsPrices() */}
-        <AlertPriceMonitor />
-        <PriceProvider>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-            <View style={{ flex: 1 }}>
-              <Stack>
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-                <Stack.Screen name="v2" options={{ headerShown: false }} />
-                <Stack.Screen name="markets" options={{ headerShown: false }} />
-              </Stack>
-              <SmartBanner />
-              <InterstitialModal />
-            </View>
-          </ThemeProvider>
-        </PriceProvider>
-      </UnifiedMarketsPriceProvider>
-    </SafeAreaProvider>
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <View style={{ flex: 1 }}>
+        <AuthGuard />
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="login" options={{ headerShown: false }} />
+          <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="v2" options={{ headerShown: false }} />
+          <Stack.Screen name="markets" options={{ headerShown: false }} />
+        </Stack>
+        <SmartBanner />
+        <InterstitialModal />
+      </View>
+    </ThemeProvider>
   );
 }

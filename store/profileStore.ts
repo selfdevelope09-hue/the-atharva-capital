@@ -30,10 +30,13 @@ export function computeGlobalNetWorthUsd(): number {
 
 export type ProfileState = {
   firebaseUser: User | null;
+  /** True after the first `onAuthStateChanged` callback fires (even if user is null). */
+  authInitialized: boolean;
   clientId: string | null;
   cloudUsername: string | null;
   totalNetWorthUsd: number;
   setFirebaseUser: (user: User | null) => void;
+  setAuthInitialized: () => void;
   /** Pull wallet + crypto stores, refresh `totalNetWorthUsd`, optionally push to Firestore. */
   refreshGlobalEarnings: (options?: { pushToCloud?: boolean }) => Promise<void>;
   /** Load `clientId` / username from Firestore; mint `clientId` if missing. */
@@ -44,11 +47,13 @@ export type ProfileState = {
 
 export const useProfileStore = create<ProfileState>((set, get) => ({
   firebaseUser: null,
+  authInitialized: false,
   clientId: null,
   cloudUsername: null,
   totalNetWorthUsd: computeGlobalNetWorthUsd(),
 
   setFirebaseUser: (firebaseUser) => set({ firebaseUser }),
+  setAuthInitialized: () => set({ authInitialized: true }),
 
   refreshGlobalEarnings: async (options) => {
     const total = computeGlobalNetWorthUsd();

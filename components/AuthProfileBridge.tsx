@@ -12,6 +12,7 @@ export function AuthProfileBridge() {
   useEffect(() => {
     const unsub = subscribeAuth((user) => {
       useProfileStore.getState().setFirebaseUser(user);
+      useProfileStore.getState().setAuthInitialized();
       void useProfileStore.getState().hydrateFromFirestore();
       if (user) {
         void useWatchlistListsStore.getState().refresh();
