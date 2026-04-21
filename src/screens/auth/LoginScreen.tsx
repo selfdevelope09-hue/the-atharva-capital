@@ -89,11 +89,39 @@ export function LoginScreen() {
     return () => clearTimeout(id);
   }, [resendTimer]);
 
-  // Cleanup reCAPTCHA on unmount
+  // ── reCAPTCHA: initialise on mount (web only) ────────────────────────────
+  // Creating the verifier up-front (rather than lazily on button click) ensures
+  // the DOM anchor is ready and the invisible widget pre-renders in the background.
   useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || !auth) return;
+
+    function createVerifier() {
+      try {
+        const v = new RecaptchaVerifier(auth!, 'recaptcha-container', {
+          size: 'invisible',
+          callback: () => {},
+          'expired-callback': () => {
+            // Token expired — silently recreate so the next OTP attempt works
+            try { recaptchaRef.current?.clear(); } catch { /* ignore */ }
+            recaptchaRef.current = null;
+            createVerifier();
+          },
+        });
+        recaptchaRef.current = v;
+        // Also expose on window so Firebase internals can find it if needed
+        (window as Record<string, unknown>).recaptchaVerifier = v;
+      } catch (e) {
+        if (__DEV__) console.warn('[reCAPTCHA] init failed:', e);
+      }
+    }
+
+    createVerifier();
+
     return () => {
       try {
         recaptchaRef.current?.clear();
+        recaptchaRef.current = null;
+        delete (window as Record<string, unknown>).recaptchaVerifier;
       } catch {
         // ignore
       }
@@ -109,6 +137,8 @@ export function LoginScreen() {
     if (user) {
       await createOrUpdateFirestoreUser(user);
     }
+    // router.replace is handled by AuthGuard (reacts to firebaseUser state change).
+    // Calling it here as well is a fast-path in case AuthGuard hasn't fired yet.
     router.replace('/(tabs)');
   }
 
@@ -183,19 +213,27 @@ export function LoginScreen() {
     }
     clearError();
     setLoading(true);
+    // Always include country code; strip any leading zeros from the local number
     const e164 = `${dialCode}${digits}`;
     try {
       if (Platform.OS === 'web') {
-        // On web, use Firebase RecaptchaVerifier directly
+        // Ensure the verifier is alive (it may have been cleared after a previous error)
         if (!recaptchaRef.current) {
           recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
             size: 'invisible',
             callback: () => {},
+            'expired-callback': () => {
+              try { recaptchaRef.current?.clear(); } catch { /* ignore */ }
+              recaptchaRef.current = null;
+            },
           });
+          (window as Record<string, unknown>).recaptchaVerifier = recaptchaRef.current;
         }
-        confirmationRef.current = await signInWithPhoneNumber(auth, e164, recaptchaRef.current);
+        const confirmation = await signInWithPhoneNumber(auth, e164, recaptchaRef.current);
+        confirmationRef.current = confirmation;
+        // Also store on window for easier access / debugging
+        (window as Record<string, unknown>).confirmationResult = confirmation;
       } else {
-        // On native, use the shared authProvider wrapper (which also handles link flow)
         await sendPhoneOtp(e164, {} as never);
       }
       setStep('otp');
@@ -203,10 +241,11 @@ export function LoginScreen() {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      // Reset recaptcha so it can be re-used on retry
+      // Reset reCAPTCHA so the next attempt gets a fresh token
       try {
         recaptchaRef.current?.clear();
         recaptchaRef.current = null;
+        delete (window as Record<string, unknown>).recaptchaVerifier;
       } catch {
         // ignore
       }
@@ -225,8 +264,16 @@ export function LoginScreen() {
     clearError();
     setLoading(true);
     try {
-      if (Platform.OS === 'web' && confirmationRef.current) {
-        const result = await confirmationRef.current.confirm(code);
+      if (Platform.OS === 'web') {
+        // Use ref; fall back to window global in case of component re-render
+        const confirmation =
+          confirmationRef.current ??
+          ((window as Record<string, unknown>).confirmationResult as ConfirmationResult | undefined);
+        if (!confirmation) {
+          setError('Session expired. Please resend the OTP.');
+          return;
+        }
+        const result = await confirmation.confirm(code);
         if (result.user) {
           await createOrUpdateFirestoreUser(result.user);
           router.replace('/(tabs)');
@@ -238,7 +285,7 @@ export function LoginScreen() {
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
+      setError(msg.includes('invalid-verification-code') ? 'Invalid OTP. Please try again.' : msg);
     } finally {
       setLoading(false);
     }

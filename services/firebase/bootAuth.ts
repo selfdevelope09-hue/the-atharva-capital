@@ -15,6 +15,11 @@ export function generateCoolTraderUsername(): string {
  * Boot sequence: if a real (non-anonymous) user is already signed in just refresh their
  * `lastSeenAt`. Otherwise sign in anonymously so Firestore rules have a uid to work with —
  * the user will be prompted to log in via the login screen.
+ *
+ * IMPORTANT: `auth.authStateReady()` waits for Firebase to finish restoring the persisted
+ * auth session from localStorage/IndexedDB before we ever inspect `auth.currentUser`.
+ * Without this wait, `currentUser` is always null on first render (state not yet hydrated)
+ * and `signInAnonymously()` would clobber a real already-logged-in session.
  */
 export async function bootFirebaseAuthAndProfile(): Promise<void> {
   if (!isFirebaseConfigured || !auth || !db) {
@@ -23,6 +28,11 @@ export async function bootFirebaseAuthAndProfile(): Promise<void> {
     }
     return;
   }
+
+  // Wait for Firebase to finish restoring the persisted auth state from storage.
+  // This is the critical fix: without it, auth.currentUser is null on cold start
+  // even when a real user is already logged in.
+  await auth.authStateReady();
 
   // If a real account is already persisted, don't sign them out with signInAnonymously.
   if (auth.currentUser && !auth.currentUser.isAnonymous) {
