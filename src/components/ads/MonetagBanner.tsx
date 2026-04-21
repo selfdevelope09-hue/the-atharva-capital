@@ -36,6 +36,8 @@ export function MonetagBanner({ variant = 'native', style }: MonetagBannerProps)
     const div = document.createElement('div');
     div.id = divId;
     div.className = 'monetag-banner';
+    div.setAttribute('data-monetag-refresh', '1');
+    div.setAttribute('data-monetag-variant', variant);
     div.style.cssText = `width:100%;min-height:${variant === 'video' ? 100 : 60}px`;
 
     // NOTE: We do NOT call any Monetag JS here — the script was removed because

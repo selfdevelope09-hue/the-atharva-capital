@@ -23,6 +23,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import '../global.css';
 
 import { AppRootErrorBoundary, RootFontErrorScreen, RootLoadingScreen } from '@/components/AppRootErrorBoundary';
+import { GlobalAdRefresh } from '@/src/components/ads/GlobalAdRefresh';
 import { InterstitialModal } from '@/components/ads/InterstitialModal';
 import { SmartBanner } from '@/components/ads/SmartBanner';
 import { AlertPriceMonitor } from '@/components/AlertPriceMonitor';
@@ -211,6 +212,7 @@ function AppContent() {
         {/* AuthGuard + AdManager both need to be inside the navigation context */}
         <AuthGuard />
         <AdManager />
+        <GlobalAdRefresh />
           <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="login" options={{ headerShown: false }} />
@@ -221,6 +223,7 @@ function AppContent() {
           <Stack.Screen name="chats/index" options={{ headerShown: false }} />
           <Stack.Screen name="chats/[conversationId]" options={{ headerShown: false }} />
           <Stack.Screen name="topup/[market]" options={{ headerShown: false }} />
+          <Stack.Screen name="trades" options={{ headerShown: false }} />
         </Stack>
         <SmartBanner />
         <InterstitialModal />

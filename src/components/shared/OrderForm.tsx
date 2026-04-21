@@ -1,4 +1,4 @@
-import Slider from '@react-native-community/slider';
+import { SliderInput as Slider } from './SliderInput';
 import React, { useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, Text, TextInput, View, ViewStyle } from 'react-native';
 import { showRewardedVideoForWalletTopUp, VIDEO_REWARD_TOPUP_USD } from '@/services/ads/VideoAdManager';
