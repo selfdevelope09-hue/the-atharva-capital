@@ -28,12 +28,39 @@ export interface OrderFormProps {
   onChange: (next: OrderFormValue) => void;
   onSubmit?: (v: OrderFormValue) => void;
   style?: ViewStyle;
+
+  /** When provided, renders "📍 Set on Chart" button which activates pre-trade drag mode. */
+  onSetOnChart?: (entry: number, tp: number | null, sl: number | null) => void;
+  /** True when the pre-trade drag overlay is active — shows status panel instead of trade button. */
+  chartMode?: boolean;
+  /** Current pre-trade values reflected back from ChartWithOverlay for display. */
+  chartEntry?: number | null;
+  chartTP?: number | null;
+  chartSL?: number | null;
+  onChartConfirm?: () => void;
+  onChartDiscard?: () => void;
 }
 
 const LEVERAGE_PRESETS = [1, 2, 5, 10, 25, 50, 75, 100, 125];
 
 export function OrderForm(props: OrderFormProps) {
-  const { market, lastPrice, balance, value, onChange, onSubmit, style } = props;
+  const {
+    market,
+    lastPrice,
+    balance,
+    value,
+    onChange,
+    onSubmit,
+    style,
+    onSetOnChart,
+    chartMode = false,
+    chartEntry,
+    chartTP,
+    chartSL,
+    onChartConfirm,
+    onChartDiscard,
+  } = props;
+
   const [amountStr, setAmountStr] = useState<string>(value.amount ? String(value.amount) : '');
   const [limitStr, setLimitStr] = useState<string>(value.limitPrice != null ? String(value.limitPrice) : '');
   const [tpStr, setTpStr] = useState<string>(value.tp != null ? String(value.tp) : '');
@@ -84,6 +111,17 @@ export function OrderForm(props: OrderFormProps) {
     return isFinite(n) ? n : null;
   };
 
+  const handleSetOnChart = () => {
+    if (!lastPrice) return;
+    const cp = lastPrice;
+    const d = cp > 10 ? 2 : 5;
+    const tp = value.tp ?? parseFloat((value.side === 'long' ? cp * 1.02 : cp * 0.98).toFixed(d));
+    const sl = value.sl ?? parseFloat((value.side === 'long' ? cp * 0.98 : cp * 1.02).toFixed(d));
+    onSetOnChart?.(cp, tp, sl);
+  };
+
+  const cs = market.currencySymbol;
+
   return (
     <View style={[{ backgroundColor: T.bg1, borderRadius: T.radiusLg, borderWidth: 1, borderColor: T.border, padding: 16, gap: 14 }, style]}>
       <SegmentRow
@@ -114,14 +152,11 @@ export function OrderForm(props: OrderFormProps) {
       />
 
       {value.orderType === 'limit' && (
-        <Field label={`Limit price (${market.currencySymbol})`}>
+        <Field label={`Limit price (${cs})`}>
           <TextInput
             keyboardType="decimal-pad"
             value={limitStr}
-            onChangeText={(s) => {
-              setLimitStr(s);
-              update({ limitPrice: parseNum(s) });
-            }}
+            onChangeText={(s) => { setLimitStr(s); update({ limitPrice: parseNum(s) }); }}
             placeholder={price ? price.toFixed(2) : '0.00'}
             placeholderTextColor={T.text3}
             style={inputStyle}
@@ -133,10 +168,7 @@ export function OrderForm(props: OrderFormProps) {
         <TextInput
           keyboardType="decimal-pad"
           value={amountStr}
-          onChangeText={(s) => {
-            setAmountStr(s);
-            update({ amount: parseNum(s) ?? 0 });
-          }}
+          onChangeText={(s) => { setAmountStr(s); update({ amount: parseNum(s) ?? 0 }); }}
           placeholder="0.00"
           placeholderTextColor={T.text3}
           style={inputStyle}
@@ -172,12 +204,7 @@ export function OrderForm(props: OrderFormProps) {
               <Pressable
                 key={p}
                 onPress={() => update({ leverage: p })}
-                style={{
-                  paddingVertical: 6,
-                  paddingHorizontal: 10,
-                  borderRadius: T.radiusSm,
-                  backgroundColor: active ? market.accentColor ?? T.yellow : T.bg2,
-                }}
+                style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: T.radiusSm, backgroundColor: active ? market.accentColor ?? T.yellow : T.bg2 }}
               >
                 <Text style={{ color: active ? '#000' : T.text1, fontSize: 12, fontWeight: '700' }}>{p}x</Text>
               </Pressable>
@@ -192,10 +219,7 @@ export function OrderForm(props: OrderFormProps) {
             <TextInput
               keyboardType="decimal-pad"
               value={tpStr}
-              onChangeText={(s) => {
-                setTpStr(s);
-                update({ tp: parseNum(s) });
-              }}
+              onChangeText={(s) => { setTpStr(s); update({ tp: parseNum(s) }); }}
               placeholder="—"
               placeholderTextColor={T.text3}
               style={inputStyle}
@@ -207,10 +231,7 @@ export function OrderForm(props: OrderFormProps) {
             <TextInput
               keyboardType="decimal-pad"
               value={slStr}
-              onChangeText={(s) => {
-                setSlStr(s);
-                update({ sl: parseNum(s) });
-              }}
+              onChangeText={(s) => { setSlStr(s); update({ sl: parseNum(s) }); }}
               placeholder="—"
               placeholderTextColor={T.text3}
               style={inputStyle}
@@ -219,20 +240,24 @@ export function OrderForm(props: OrderFormProps) {
         </View>
       </View>
 
-      <Pressable onPress={setAutoTpSl} style={{ alignSelf: 'flex-end', paddingVertical: 6, paddingHorizontal: 10, borderRadius: T.radiusSm, backgroundColor: T.bg2 }}>
+      <Pressable
+        onPress={setAutoTpSl}
+        style={{ alignSelf: 'flex-end', paddingVertical: 6, paddingHorizontal: 10, borderRadius: T.radiusSm, backgroundColor: T.bg2 }}
+      >
         <Text style={{ color: T.text1, fontSize: 12, fontWeight: '600' }}>Auto ±2%</Text>
       </Pressable>
 
       <View style={{ backgroundColor: T.bg0, borderRadius: T.radiusMd, borderWidth: 1, borderColor: T.border, padding: 12, gap: 6 }}>
-        <SummaryRow label="Price" value={fmtMoney(price || null, market.currencySymbol)} />
-        <SummaryRow label="Notional" value={fmtMoney(notional, market.currencySymbol)} />
-        <SummaryRow label="Margin" value={fmtMoney(margin, market.currencySymbol)} />
-        <SummaryRow label={`Fee (${pct(feeRate)})`} value={fmtMoney(fee, market.currencySymbol)} />
-        <SummaryRow label="Total cost" value={fmtMoney(total, market.currencySymbol)} strong />
-        {estProfit != null && <SummaryRow label="Est. profit @ TP" value={fmtMoney(estProfit, market.currencySymbol)} valueColor={estProfit >= 0 ? T.green : T.red} />}
-        {estLoss != null && <SummaryRow label="Est. loss @ SL" value={fmtMoney(estLoss, market.currencySymbol)} valueColor={estLoss >= 0 ? T.green : T.red} />}
+        <SummaryRow label="Price" value={fmtMoney(price || null, cs)} />
+        <SummaryRow label="Notional" value={fmtMoney(notional, cs)} />
+        <SummaryRow label="Margin" value={fmtMoney(margin, cs)} />
+        <SummaryRow label={`Fee (${pct(feeRate)})`} value={fmtMoney(fee, cs)} />
+        <SummaryRow label="Total cost" value={fmtMoney(total, cs)} strong />
+        {estProfit != null && <SummaryRow label="Est. profit @ TP" value={fmtMoney(estProfit, cs)} valueColor={estProfit >= 0 ? T.green : T.red} />}
+        {estLoss != null && <SummaryRow label="Est. loss @ SL" value={fmtMoney(estLoss, cs)} valueColor={estLoss >= 0 ? T.green : T.red} />}
       </View>
 
+      {/* Watch video reward */}
       <Pressable
         onPress={async () => {
           if (Platform.OS === 'web') {
@@ -253,37 +278,115 @@ export function OrderForm(props: OrderFormProps) {
           backgroundColor: T.bg0,
           borderWidth: 2,
           borderColor: T.yellow,
-          ...Platform.select({
-            ios: {
-              shadowColor: T.yellow,
-              shadowOpacity: 0.55,
-              shadowRadius: 14,
-              shadowOffset: { width: 0, height: 0 },
-            },
-            android: { elevation: 10 },
-            default: {},
-          }),
+          ...Platform.select({ ios: { shadowColor: T.yellow, shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 0 } }, android: { elevation: 10 }, default: {} }),
         }}
       >
         <Text style={{ color: T.yellow, fontWeight: '800', fontSize: 13, letterSpacing: 0.3 }}>Watch Video to Claim $5,000</Text>
       </Pressable>
 
-      <Pressable
-        onPress={() => onSubmit?.(value)}
-        style={{
-          backgroundColor: value.side === 'long' ? T.green : T.red,
-          paddingVertical: 14,
-          borderRadius: T.radiusMd,
-          alignItems: 'center',
-        }}
-      >
-        <Text style={{ color: '#000', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 }}>
-          {value.side === 'long' ? 'BUY / LONG' : 'SELL / SHORT'}
-        </Text>
-      </Pressable>
+      {/* Trade action area — either chart-mode status or trade buttons */}
+      {!chartMode ? (
+        <View style={{ gap: 8 }}>
+          {/* Set on Chart button (web only — canvas interaction) */}
+          {onSetOnChart && Platform.OS === 'web' && (
+            <Pressable
+              onPress={handleSetOnChart}
+              style={{
+                paddingVertical: 13,
+                borderRadius: T.radiusMd,
+                alignItems: 'center',
+                borderWidth: 1.5,
+                borderColor: T.yellow,
+                backgroundColor: 'rgba(240,185,11,0.08)',
+              }}
+            >
+              <Text style={{ color: T.yellow, fontWeight: '700', fontSize: 13 }}>📍 Set on Chart</Text>
+            </Pressable>
+          )}
+
+          {/* Direct place order button */}
+          <Pressable
+            onPress={() => onSubmit?.(value)}
+            style={{
+              backgroundColor: value.side === 'long' ? T.green : T.red,
+              paddingVertical: 14,
+              borderRadius: T.radiusMd,
+              alignItems: 'center',
+            }}
+          >
+            <Text style={{ color: '#000', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 }}>
+              {value.side === 'long' ? '▲ Buy / Long' : '▼ Sell / Short'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : (
+        /* Chart mode status panel */
+        <View
+          style={{
+            backgroundColor: T.bg0,
+            borderRadius: T.radiusMd,
+            borderWidth: 1.5,
+            borderColor: T.yellow,
+            padding: 14,
+            gap: 10,
+          }}
+        >
+          <Text
+            style={{ color: T.yellow, fontSize: 12, fontWeight: '800', textAlign: 'center', letterSpacing: 0.5 }}
+          >
+            📍 Drag lines on chart
+          </Text>
+
+          {(
+            [
+              ['Entry', chartEntry, '#2196F3'],
+              ['TP', chartTP, T.green],
+              ['SL', chartSL, T.red],
+            ] as [string, number | null | undefined, string][]
+          ).map(([lbl, val, col]) => (
+            <View key={lbl} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ color: T.text2, fontSize: 11 }}>{lbl}</Text>
+              <Text style={{ color: col, fontSize: 12, fontWeight: '700' }}>
+                {val != null ? `${cs}${val.toFixed(val >= 1 ? 2 : 6)}` : '—'}
+              </Text>
+            </View>
+          ))}
+
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+            <Pressable
+              onPress={onChartDiscard}
+              style={{
+                flex: 1,
+                paddingVertical: 11,
+                borderRadius: T.radiusMd,
+                borderWidth: 1,
+                borderColor: T.red,
+                backgroundColor: T.redDim,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: T.red, fontWeight: '700', fontSize: 12 }}>Discard</Text>
+            </Pressable>
+            <Pressable
+              onPress={onChartConfirm}
+              style={{
+                flex: 1,
+                paddingVertical: 11,
+                borderRadius: T.radiusMd,
+                backgroundColor: T.green,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: '#000', fontWeight: '800', fontSize: 12 }}>Confirm</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
+
+/* ─── Sub-components ─────────────────────────────────────────────────────────── */
 
 function SegmentRow<T extends string>(props: {
   options: { id: T; label: string; activeColor?: string }[];
