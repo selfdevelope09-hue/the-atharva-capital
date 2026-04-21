@@ -21,6 +21,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
+/** Shared Firestore — enable network via `ensureFirestoreConnected` (FirestoreProvider + bootAuth). */
 export const db = getFirestore(app);
 
 /** Firebase Storage — used for profile photo uploads */

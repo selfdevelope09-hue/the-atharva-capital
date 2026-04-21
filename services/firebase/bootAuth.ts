@@ -3,6 +3,7 @@ import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 import { auth, db, isFirebaseConfigured } from '@/config/firebaseConfig';
 import { generateAtcClientId } from '@/lib/clientId';
+import { ensureFirestoreConnected } from '@/services/firebase/ensureFirestore';
 
 /** e.g. Trader_99X — two digits + trailing letter */
 export function generateCoolTraderUsername(): string {
@@ -33,6 +34,8 @@ export async function bootFirebaseAuthAndProfile(): Promise<void> {
   // This is the critical fix: without it, auth.currentUser is null on cold start
   // even when a real user is already logged in.
   await auth.authStateReady();
+
+  await ensureFirestoreConnected();
 
   // If a real account is already persisted, don't sign them out with signInAnonymously.
   if (auth.currentUser && !auth.currentUser.isAnonymous) {

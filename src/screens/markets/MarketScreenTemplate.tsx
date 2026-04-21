@@ -1,15 +1,11 @@
 /**
- * Phase 3 — Per-market terminal: selector, session + clock, ticker, tabs, stock cards, watchlists.
- * Inline styles only; accent from market config; equities + optional India F&O tab.
+ * Paper-trading terminal — TradingView Advanced Chart + order rail + Firestore `trades`.
  */
 
-import { AadsAdaptiveBanner } from '@/src/components/ads/AadsAdaptiveBanner';
-import { MonetagBanner } from '@/src/components/ads/MonetagBanner';
-import { runRewardedForCashAndUnlocks } from '@/services/ads/RewardedAds';
 import { useRouter, type Href } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Modal,
+  Alert,
   Pressable,
   ScrollView,
   Text,
@@ -18,813 +14,617 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
-import { NAV_BREAKPOINT } from '@/constants/theme';
-import { LeftSidebar } from '@/src/components/layout/LeftSidebar';
-import { BottomPanel } from '@/src/components/layout/BottomPanel';
+import { auth } from '@/config/firebaseConfig';
+import { applyBalanceDelta } from '@/services/firebase/userBalancesRepository';
+import {
+  closePaperTrade,
+  placePaperTrade,
+  subscribeClosedPaperTrades,
+  subscribeOpenPaperTrades,
+  type PaperTradeDoc,
+} from '@/services/firebase/marketPaperTradesRepository';
 
 import type { AppMarket } from '@/constants/appMarkets';
-import { auth, isFirebaseConfigured } from '@/config/firebaseConfig';
-import {
-  createMarketWatchlist,
-  ensureDefaultMarketWatchlist,
-  loadMarketWatchlists,
-  MAX_LISTS_PER_MARKET,
-  saveMarketWatchlist,
-  type MarketWatchlistDoc,
-} from '@/services/firebase/marketWatchlistRepository';
+import { MARKET_SYMBOLS, type MarketSymbolRow } from '@/src/constants/marketSymbols';
+import { MARKETS as CFG, type MarketId } from '@/src/constants/markets';
+import { fmtMoney, T } from '@/src/constants/theme';
 
+import TradingViewChart from '@/src/components/TradingViewChart';
 import { MarketSelector, type MarketSelectorValue } from '@/src/components/shared/MarketSelector';
-import { TickerBar } from '@/src/components/shared/TickerBar';
-import {
-  MARKETS,
-  type MarketConfig,
-  type MarketId,
-  toYahooFullSymbol,
-  yahooSymbolFor,
-} from '@/src/constants/markets';
-import { fmtCompact, fmtMoney, fmtPct, T } from '@/src/constants/theme';
 import { useMarketPrices, useMarketSubscribe } from '@/src/contexts/MarketPriceContext';
-import type { UnifiedMarketTick } from '@/contexts/UnifiedMarketsPriceContext';
-import { getStockMeta } from '@/src/data/stockMeta';
-import {
-  describeMarketHours,
-  formatMarketClock,
-  sessionBadgeColor,
-  sessionForMarket,
-  type VenueSessionLabel,
-} from '@/src/screens/markets/shared/marketSession';
-import { PREMIUM_MARKET_IDS } from '@/store/adRewardsStore';
-import { useAdRewardsStore } from '@/store/adRewardsStore';
+import { ORDER_SHEET_BREAKPOINT } from '@/constants/theme';
+import { useMultiMarketBalanceStore } from '@/store/multiMarketBalanceStore';
+import { useLedgerStore } from '@/store/ledgerStore';
+import { unrealizedPnlUsd } from '@/src/screens/dashboardMath';
 
-export type MarketScreenTab =
-  | 'all'
-  | 'watchlists'
-  | 'gainers'
-  | 'losers'
-  | 'highs'
-  | 'lows'
-  | 'fo';
+const BG = '#0d111c';
+const PANEL = '#131722';
+const BORDER = '#2a2e39';
+const MUTED = '#787b86';
+const TV_GREEN = '#26a69a';
+const TV_RED = '#ef5350';
+
+const TIMEFRAMES = [
+  { label: '1m', value: '1' },
+  { label: '5m', value: '5' },
+  { label: '15m', value: '15' },
+  { label: '1H', value: '60' },
+  { label: '4H', value: '240' },
+  { label: '1D', value: 'D' },
+  { label: '1W', value: 'W' },
+] as const;
 
 export interface MarketScreenTemplateProps {
   marketId: MarketId;
-  /** India — adds “F&O” tab (indices / liquid ETFs). */
-  showFoTab?: boolean;
+  title?: string;
 }
 
-type EquityRow = {
-  kind: 'equity';
-  ticker: string;
-  full: string;
-  company: string;
-  sector: string;
-  tick: UnifiedMarketTick | undefined;
-};
+type BottomTab = 'positions' | 'orders' | 'history' | 'balance';
+type OrderKind = 'market' | 'limit' | 'stop';
 
-type FoRow = {
-  kind: 'fo';
-  ticker: string;
-  full: string;
-  company: string;
-  sector: string;
-  tick: UnifiedMarketTick | undefined;
-};
-
-const PRESET_COLORS = ['#f0b90b', '#FF6B35', '#00C805', '#7B68EE', '#00B4D8', '#C8A951'];
-
-function rowFull(market: MarketConfig, ticker: string): string {
-  if (market.dataSource === 'binance_websocket') return ticker;
-  return yahooSymbolFor(market, ticker);
-}
-
-function isNewHigh(t: UnifiedMarketTick | undefined): boolean {
-  if (!t?.price || t.fiftyTwoWeekHigh == null || t.fiftyTwoWeekHigh <= 0) return false;
-  return t.price >= t.fiftyTwoWeekHigh * 0.998;
-}
-
-function isNewLow(t: UnifiedMarketTick | undefined): boolean {
-  if (!t?.price || t.fiftyTwoWeekLow == null || t.fiftyTwoWeekLow <= 0) return false;
-  return t.price <= t.fiftyTwoWeekLow * 1.002;
-}
-
-function avgPctForSymbols(
-  cfg: MarketConfig,
-  symbols: string[],
-  ticks: Record<string, UnifiedMarketTick>
+function livePriceForRow(
+  row: MarketSymbolRow | undefined,
+  ticks: Record<string, { price?: number }>,
 ): number | null {
-  const pcts: number[] = [];
-  for (const s of symbols) {
-    const sym = s.trim().toUpperCase();
-    const full = toYahooFullSymbol(cfg, sym);
-    const p = ticks[full]?.changePct;
-    if (p != null && isFinite(p)) pcts.push(p);
-  }
-  if (pcts.length === 0) return null;
-  return pcts.reduce((a, b) => a + b, 0) / pcts.length;
+  if (!row?.pollKey) return null;
+  const t = ticks[row.pollKey];
+  const p = t?.price;
+  return p != null && isFinite(p) ? p : null;
 }
 
-export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScreenTemplateProps) {
-  const cfg = MARKETS[marketId];
-  const premiumUntil = useAdRewardsStore((s) => s.premiumUnlockUntil);
-  const isPremiumMarket = (PREMIUM_MARKET_IDS as readonly string[]).includes(marketId);
-  const premiumLocked = isPremiumMarket && Date.now() >= premiumUntil;
+function grossPnl(side: 'BUY' | 'SELL', entry: number, mark: number, units: number): number {
+  if (side === 'BUY') return (mark - entry) * units;
+  return (entry - mark) * units;
+}
+
+export default function MarketScreenTemplate({ marketId, title }: MarketScreenTemplateProps) {
+  const router = useRouter();
+  const { width, height: winH } = useWindowDimensions();
+  const isMobile = width < ORDER_SHEET_BREAKPOINT;
+  const chartMinH = isMobile ? 320 : Math.min(560, Math.max(500, Math.floor(winH * 0.45)));
+
+  const cfg = CFG[marketId];
+  const symbols = MARKET_SYMBOLS[marketId] ?? [];
+  const [selected, setSelected] = useState<MarketSymbolRow | null>(() => symbols[0] ?? null);
+  const orderRow = selected ?? symbols[0] ?? null;
+  const [interval, setInterval] = useState<string>('15');
+  const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
+  const [orderType, setOrderType] = useState<OrderKind>('market');
+  const [priceStr, setPriceStr] = useState('');
+  const [unitsStr, setUnitsStr] = useState('1');
+  const [tpOn, setTpOn] = useState(false);
+  const [slOn, setSlOn] = useState(false);
+  const [tpStr, setTpStr] = useState('');
+  const [slStr, setSlStr] = useState('');
+  const [leverage, setLeverage] = useState(1);
+  const [bottomTab, setBottomTab] = useState<BottomTab>('positions');
+  const [openTrades, setOpenTrades] = useState<(PaperTradeDoc & { id: string })[]>([]);
+  const [histTrades, setHistTrades] = useState<(PaperTradeDoc & { id: string })[]>([]);
+
   useMarketSubscribe(marketId);
   const { ticks } = useMarketPrices();
-  const router = useRouter();
-  const accent = cfg.accentColor ?? T.yellow;
-  const { width } = useWindowDimensions();
-  const isWide = width >= NAV_BREAKPOINT;
 
-  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
-  const [tab, setTab] = useState<MarketScreenTab>('all');
-  const [query, setQuery] = useState('');
-  const [now, setNow] = useState(() => new Date());
-  const [wlDocs, setWlDocs] = useState<MarketWatchlistDoc[]>([]);
-  const [wlLoading, setWlLoading] = useState(false);
-  const [expandedWlId, setExpandedWlId] = useState<string | null>(null);
+  const balances = useMultiMarketBalanceStore((s) => s.balances);
+  const balance = balances[marketId as AppMarket] ?? 0;
 
-  const [starOpen, setStarOpen] = useState(false);
-  const [starTarget, setStarTarget] = useState<{ displayTicker: string; routeTicker: string } | null>(
-    null
+  const closedTrades = useLedgerStore((s) => s.closedTrades);
+  const openPositions = useLedgerStore((s) => s.openPositions);
+  const rates = useMultiMarketBalanceStore((s) => s.usdRates);
+
+  const realizedLedger = useMemo(() => {
+    return closedTrades
+      .filter((t) => t.market === marketId)
+      .reduce((a, t) => a + t.realizedPnl, 0);
+  }, [closedTrades, marketId]);
+
+  const unrealLedger = useMemo(() => {
+    let u = 0;
+    for (const p of openPositions.filter((x) => x.market === marketId)) {
+      const mark = ticks[p.symbolFull]?.price ?? p.entryPrice;
+      u += unrealizedPnlUsd(p, mark, rates);
+    }
+    return u;
+  }, [openPositions, ticks, rates, marketId]);
+
+  useEffect(() => {
+    if (symbols.length === 0) {
+      setSelected(null);
+      return;
+    }
+    if (!selected || !symbols.find((s) => s.symbol === selected.symbol)) {
+      setSelected(symbols[0]);
+    }
+  }, [marketId, symbols, selected]);
+
+  const markPrice = useMemo(
+    () => (orderRow ? livePriceForRow(orderRow, ticks as never) : null),
+    [orderRow, ticks],
   );
 
-  const [createWlOpen, setCreateWlOpen] = useState(false);
-  const [newWlName, setNewWlName] = useState('');
-  const [newWlColor, setNewWlColor] = useState(accent);
+  useEffect(() => {
+    if (markPrice != null) setPriceStr(String(markPrice));
+  }, [markPrice, orderRow?.symbol]);
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    if (!isFirebaseConfigured || !auth?.currentUser) return;
-    void ensureDefaultMarketWatchlist(marketId as AppMarket);
+    const unsub = subscribeOpenPaperTrades(marketId, setOpenTrades);
+    return unsub;
   }, [marketId]);
 
   useEffect(() => {
-    if (tab !== 'watchlists') return;
-    let cancelled = false;
-    setWlLoading(true);
-    void (async () => {
-      try {
-        if (isFirebaseConfigured && auth?.currentUser) {
-          await ensureDefaultMarketWatchlist(marketId as AppMarket);
-          const d = await loadMarketWatchlists(marketId as AppMarket);
-          if (!cancelled) setWlDocs(d);
-        } else if (!cancelled) setWlDocs([]);
-      } finally {
-        if (!cancelled) setWlLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tab, marketId]);
-
-  const equityRows: EquityRow[] = useMemo(() => {
-    return cfg.pairs.map((ticker) => {
-      const full = rowFull(cfg, ticker);
-      const tick = ticks[full];
-      const meta = getStockMeta(marketId, ticker);
-      return {
-        kind: 'equity',
-        ticker,
-        full,
-        company: meta.company,
-        sector: meta.sector,
-        tick,
-      };
-    });
-  }, [cfg, ticks, marketId]);
-
-  const foRows: FoRow[] = useMemo(() => {
-    const extras = cfg.yahooPollExtras ?? [];
-    if (!showFoTab || extras.length === 0) return [];
-    return extras.map((full) => {
-      const meta = getStockMeta(marketId, full);
-      return {
-        kind: 'fo',
-        ticker: full,
-        full,
-        company: meta.company,
-        sector: meta.sector,
-        tick: ticks[full],
-      };
-    });
-  }, [cfg, showFoTab, ticks, marketId]);
-
-  const meanEquityVol = useMemo(() => {
-    const vs = equityRows.map((r) => r.tick?.volume).filter((v): v is number => v != null && v > 0 && isFinite(v));
-    if (vs.length === 0) return 1;
-    return vs.reduce((a, b) => a + b, 0) / vs.length;
-  }, [equityRows]);
-
-  const meanFoVol = useMemo(() => {
-    const vs = foRows.map((r) => r.tick?.volume).filter((v): v is number => v != null && v > 0 && isFinite(v));
-    if (vs.length === 0) return 1;
-    return vs.reduce((a, b) => a + b, 0) / vs.length;
-  }, [foRows]);
-
-  const sessionState =
-    equityRows.map((r) => r.tick?.marketState).find((s) => s != null && s !== '') ?? null;
-  const sessionLabel: VenueSessionLabel = sessionForMarket(marketId, sessionState);
-  const clockStr = formatMarketClock(now, cfg.timezone);
-
-  const tabList: MarketScreenTab[] = useMemo(() => {
-    const base: MarketScreenTab[] = ['all', 'watchlists', 'gainers', 'losers', 'highs', 'lows'];
-    if (showFoTab && marketId === 'india') base.push('fo');
-    return base;
-  }, [showFoTab, marketId]);
-
-  useEffect(() => {
-    if (!tabList.includes(tab)) setTab('all');
-  }, [tabList, tab]);
+    const unsub = subscribeClosedPaperTrades(marketId, 50, setHistTrades);
+    return unsub;
+  }, [marketId]);
 
   const navigateMarket = useCallback(
     (id: MarketSelectorValue) => {
       if (id === 'all') router.replace('/v2' as Href);
       else router.replace(`/v2/${id}` as Href);
     },
-    [router]
+    [router],
   );
 
-  const openStar = useCallback((displayTicker: string, routeTicker: string) => {
-    setStarTarget({ displayTicker, routeTicker });
-    setStarOpen(true);
-    if (isFirebaseConfigured && auth?.currentUser) {
-      void (async () => {
-        await ensureDefaultMarketWatchlist(marketId as AppMarket);
-        try {
-          const d = await loadMarketWatchlists(marketId as AppMarket);
-          setWlDocs(d);
-        } catch {
-          /* ignore */
-        }
-      })();
+  const onPlaceOrder = async () => {
+    if (!auth?.currentUser) {
+      Alert.alert('Sign in', 'Sign in to place paper orders.');
+      return;
     }
-  }, [marketId]);
-
-  const onCreateWatchlist = async () => {
-    const name = newWlName.trim() || `My ${cfg.name} Picks`;
-    try {
-      await createMarketWatchlist(marketId as AppMarket, { name, color: newWlColor, symbols: [] });
-      setNewWlName('');
-      setCreateWlOpen(false);
-      const d = await loadMarketWatchlists(marketId as AppMarket);
-      setWlDocs(d);
-    } catch {
-      /* toast elsewhere */
+    const px = parseFloat(priceStr);
+    const units = parseFloat(unitsStr);
+    if (!isFinite(px) || px <= 0 || !isFinite(units) || units <= 0) {
+      Alert.alert('Invalid', 'Enter a valid price and units.');
+      return;
     }
-  };
-
-  const toggleSymbolInList = async (wl: MarketWatchlistDoc, sym: string) => {
-    const u = sym.toUpperCase();
-    const has = wl.symbols.map((x) => x.toUpperCase()).includes(u);
-    const next = has ? wl.symbols.filter((s) => s.toUpperCase() !== u) : [...wl.symbols, u];
+    const tp = tpOn && tpStr.trim() ? parseFloat(tpStr) : null;
+    const sl = slOn && slStr.trim() ? parseFloat(slStr) : null;
+    if (tpOn && (!isFinite(tp!) || tp! <= 0)) {
+      Alert.alert('TP', 'Invalid take profit.');
+      return;
+    }
+    if (slOn && (!isFinite(sl!) || sl! <= 0)) {
+      Alert.alert('SL', 'Invalid stop loss.');
+      return;
+    }
+    if (!orderRow) {
+      Alert.alert('Symbol', 'Pick a symbol.');
+      return;
+    }
     try {
-      await saveMarketWatchlist(marketId as AppMarket, wl.id, {
-        name: wl.name,
-        symbols: next,
-        color: wl.color,
-        createdAt: wl.createdAt,
-        order: wl.order,
+      const id = await placePaperTrade({
+        market: marketId,
+        symbol: orderRow.symbol,
+        pollKey: orderRow.pollKey,
+        side,
+        orderType,
+        price: px,
+        units,
+        takeProfit: tp,
+        stopLoss: sl,
+        leverage,
       });
-      const d = await loadMarketWatchlists(marketId as AppMarket);
-      setWlDocs(d);
-    } catch {
-      /* ignore */
+      if (id) Alert.alert('Order placed', `Trade ${id.slice(0, 8)}…`);
+      else Alert.alert('Offline', 'Could not save to cloud.');
+    } catch (e) {
+      Alert.alert('Error', String((e as Error)?.message ?? e));
     }
   };
 
-  const pushTrade = (routeTicker: string) => {
-    router.push(`/v2/${marketId}/trade?symbol=${encodeURIComponent(routeTicker)}` as Href);
-  };
-
-  const q = query.trim().toLowerCase();
-
-  const filteredEquity = useMemo(() => {
-    if (!q) return equityRows;
-    return equityRows.filter(
-      (r) =>
-        r.ticker.toLowerCase().includes(q) ||
-        r.company.toLowerCase().includes(q) ||
-        r.sector.toLowerCase().includes(q)
-    );
-  }, [equityRows, q]);
-
-  const filteredFo = useMemo(() => {
-    if (!q) return foRows;
-    return foRows.filter(
-      (r) =>
-        r.full.toLowerCase().includes(q) ||
-        r.company.toLowerCase().includes(q) ||
-        r.sector.toLowerCase().includes(q)
-    );
-  }, [foRows, q]);
-
-  const sortedGainers = useMemo(() => {
-    return [...filteredEquity].sort((a, b) => (b.tick?.changePct ?? -1e9) - (a.tick?.changePct ?? -1e9));
-  }, [filteredEquity]);
-
-  const sortedLosers = useMemo(() => {
-    return [...filteredEquity].sort((a, b) => (a.tick?.changePct ?? 1e9) - (b.tick?.changePct ?? 1e9));
-  }, [filteredEquity]);
-
-  const highs = useMemo(() => filteredEquity.filter((r) => isNewHigh(r.tick)), [filteredEquity]);
-  const lows = useMemo(() => filteredEquity.filter((r) => isNewLow(r.tick)), [filteredEquity]);
-
-  const displayRows: (EquityRow | FoRow)[] = useMemo(() => {
-    if (tab === 'all') return filteredEquity;
-    if (tab === 'gainers') return sortedGainers;
-    if (tab === 'losers') return sortedLosers;
-    if (tab === 'highs') return highs;
-    if (tab === 'lows') return lows;
-    if (tab === 'fo') return filteredFo;
-    return [];
-  }, [tab, filteredEquity, sortedGainers, sortedLosers, highs, lows, filteredFo]);
-
-  const tabTitle = (t: MarketScreenTab): string => {
-    switch (t) {
-      case 'all':
-        return 'All Stocks';
-      case 'watchlists':
-        return 'Watchlists';
-      case 'gainers':
-        return 'Gainers';
-      case 'losers':
-        return 'Losers';
-      case 'highs':
-        return 'New Highs';
-      case 'lows':
-        return 'New Lows';
-      case 'fo':
-        return 'F&O';
-      default:
-        return '';
+  const onCloseTrade = async (t: PaperTradeDoc & { id: string }) => {
+    const mark =
+      (t.pollKey && ticks[t.pollKey as never]?.price) ||
+      livePriceForRow(
+        symbols.find((s) => s.symbol === t.symbol),
+        ticks as never,
+      ) ||
+      t.price;
+    const pnl = grossPnl(t.side, t.price, mark, t.units);
+    try {
+      await closePaperTrade(t.id, mark, pnl);
+      try {
+        await applyBalanceDelta(marketId as AppMarket, pnl);
+      } catch {
+        /* balance rules */
+      }
+    } catch (e) {
+      Alert.alert('Close failed', String((e as Error)?.message ?? e));
     }
   };
 
-  function StockCard({
-    row,
-    routeTicker,
-    displaySymbol,
-  }: {
-    row: EquityRow | FoRow;
-    routeTicker: string;
-    displaySymbol: string;
-  }) {
-    const t = row.tick;
-    const price = t?.price ?? null;
-    const pct = t?.changePct ?? null;
-    const vol = t?.volume ?? null;
-    const up = (pct ?? 0) >= 0;
-    const volMean = row.kind === 'fo' ? meanFoVol : meanEquityVol;
-    const volRatio = volMean > 0 && vol != null && isFinite(vol) ? Math.min(2.2, vol / volMean) : 0;
-    const barW = `${Math.min(100, (volRatio / 2.2) * 100)}%`;
-
-    return (
-      <View
-        style={{
-          backgroundColor: T.bg1,
-          borderWidth: 1,
-          borderColor: T.border,
-          borderRadius: T.radiusLg,
-          padding: 14,
-          marginBottom: 12,
-        }}
-      >
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text style={{ color: T.text0, fontSize: 15, fontWeight: '800' }} numberOfLines={2}>
-              {row.company}
-            </Text>
-            <Text style={{ color: T.text2, fontSize: 12, marginTop: 4, fontWeight: '700' }}>{displaySymbol}</Text>
-          </View>
-          <View style={{ alignItems: 'flex-end', gap: 6 }}>
-            <Text style={{ color: T.text0, fontSize: 18, fontWeight: '700' }}>{fmtMoney(price, cfg.currencySymbol)}</Text>
-            <View
-              style={{
-                paddingHorizontal: 8,
-                paddingVertical: 3,
-                borderRadius: 999,
-                backgroundColor: up ? T.greenDim : T.redDim,
-              }}
-            >
-              <Text style={{ color: up ? T.green : T.red, fontSize: 12, fontWeight: '700' }}>{fmtPct(pct)}</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
-          <Text style={{ color: T.text3, fontSize: 11 }}>Volume vs avg</Text>
-          <Text style={{ color: T.text2, fontSize: 11, fontWeight: '600' }}>{fmtCompact(vol)}</Text>
-        </View>
-        <View style={{ marginTop: 6, height: 6, backgroundColor: T.bg2, borderRadius: 4, overflow: 'hidden' }}>
-          <View style={{ width: barW as `${number}%`, height: '100%', backgroundColor: accent }} />
-        </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
-          <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: T.radiusSm, backgroundColor: T.bg2 }}>
-            <Text style={{ color: T.text1, fontSize: 11, fontWeight: '700' }}>{row.sector}</Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Pressable onPress={() => openStar(displaySymbol, routeTicker)} hitSlop={8}>
-              <Text style={{ color: T.yellow, fontSize: 20 }}>☆</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => pushTrade(routeTicker)}
-              style={{
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderRadius: T.radiusSm,
-                backgroundColor: T.greenDim,
-              }}
-            >
-              <Text style={{ color: T.green, fontSize: 12, fontWeight: '800' }}>Trade →</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  const wlSymRoute = (sym: string) => toYahooFullSymbol(cfg, sym);
+  const headerTitle = title ?? cfg.name;
 
   return (
-    <View style={{ flex: 1, backgroundColor: T.bg0 }}>
-      {premiumLocked ? (
-        <View
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            top: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.94)',
-            zIndex: 100,
-            justifyContent: 'center',
-            padding: 24,
-          }}
-        >
-          <Text style={{ color: T.text0, fontSize: 22, fontWeight: '800', textAlign: 'center' }}>Premium market</Text>
-          <Text style={{ color: T.text2, fontSize: 13, marginTop: 12, textAlign: 'center' }}>
-            Switzerland & Germany venues require a quick rewarded unlock (24h).
-          </Text>
-          <Pressable
-            onPress={() => void runRewardedForCashAndUnlocks()}
-            style={{
-              marginTop: 20,
-              backgroundColor: T.yellow,
-              paddingVertical: 14,
-              borderRadius: T.radiusMd,
-              alignItems: 'center',
-            }}
-          >
-            <Text style={{ color: '#000', fontWeight: '800' }}>Watch ad to unlock 24h</Text>
-          </Pressable>
-          <Pressable onPress={() => router.replace('/v2' as Href)} style={{ marginTop: 16, alignItems: 'center' }}>
-            <Text style={{ color: T.text3, fontSize: 13 }}>Back to markets</Text>
-          </Pressable>
-        </View>
-      ) : null}
-
+    <View style={{ flex: 1, backgroundColor: BG, overflow: 'hidden' }}>
       <MarketSelector active={marketId} onChange={navigateMarket} />
 
-      <TickerBar market={cfg} />
+      <View style={{ paddingHorizontal: 10, paddingVertical: 8, backgroundColor: PANEL, borderBottomWidth: 1, borderBottomColor: BORDER, gap: 8 }}>
+        <Text style={{ color: T.text0, fontSize: 16, fontWeight: '800' }}>
+          {cfg.flag} {headerTitle}
+        </Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, flexDirection: 'row', flexWrap: 'wrap' }}>
+          {symbols.map((s) => {
+            const on = !!selected && s.symbol === selected.symbol;
+            return (
+              <Pressable
+                key={s.symbol}
+                onPress={() => setSelected(s)}
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 6,
+                  backgroundColor: on ? T.yellow : 'transparent',
+                  borderWidth: on ? 0 : 1,
+                  borderColor: BORDER,
+                }}
+              >
+                <Text style={{ color: on ? '#000' : T.text1, fontSize: 12, fontWeight: '700' }} numberOfLines={1}>
+                  {s.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, flexDirection: 'row' }}>
+          {TIMEFRAMES.map((tf) => {
+            const on = interval === tf.value;
+            return (
+              <Pressable
+                key={tf.value}
+                onPress={() => setInterval(tf.value)}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 4,
+                  backgroundColor: on ? 'rgba(240,185,11,0.15)' : 'transparent',
+                  borderWidth: 1,
+                  borderColor: on ? T.yellow : BORDER,
+                }}
+              >
+                <Text style={{ color: on ? T.yellow : MUTED, fontSize: 11, fontWeight: '700' }}>{tf.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
 
-      <View style={{ flex: 1, minHeight: 0 }}>
-        <View style={{ flex: 1, minHeight: 0, flexDirection: isWide ? 'row' : 'column' }}>
-          {isWide ? (
-            <LeftSidebar
-              marketId={marketId}
-              selectedSymbol={selectedSymbol}
-              onSelectSymbol={setSelectedSymbol}
+      <View
+        style={{
+          flex: 1,
+          flexDirection: isMobile ? 'column' : 'row',
+          overflow: 'hidden',
+          minHeight: 0,
+        }}
+      >
+        <View style={{ flex: 1, minWidth: 0, minHeight: isMobile ? chartMinH : undefined, backgroundColor: BG }}>
+          {orderRow?.symbol ? (
+            <TradingViewChart symbol={orderRow.symbol} interval={interval} minHeight={chartMinH} />
+          ) : (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+              <Text style={{ color: MUTED }}>No symbols for this market.</Text>
+            </View>
+          )}
+        </View>
+
+        <ScrollView
+          style={{
+            width: isMobile ? '100%' : 280,
+            maxHeight: isMobile ? undefined : undefined,
+            borderLeftWidth: isMobile ? 0 : 1,
+            borderTopWidth: isMobile ? 1 : 0,
+            borderColor: BORDER,
+            backgroundColor: PANEL,
+          }}
+          contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+        >
+          <Text style={{ color: T.text3, fontSize: 10, marginBottom: 8, letterSpacing: 0.5 }}>ORDER</Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+            <Pressable
+              onPress={() => setSide('BUY')}
+              style={{
+                flex: 1,
+                paddingVertical: 10,
+                borderRadius: 6,
+                backgroundColor: side === 'BUY' ? TV_GREEN : 'transparent',
+                borderWidth: 1,
+                borderColor: side === 'BUY' ? TV_GREEN : BORDER,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: side === 'BUY' ? '#fff' : TV_GREEN, fontWeight: '800', fontSize: 13 }}>BUY</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setSide('SELL')}
+              style={{
+                flex: 1,
+                paddingVertical: 10,
+                borderRadius: 6,
+                backgroundColor: side === 'SELL' ? TV_RED : 'transparent',
+                borderWidth: 1,
+                borderColor: side === 'SELL' ? TV_RED : BORDER,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: side === 'SELL' ? '#fff' : TV_RED, fontWeight: '800', fontSize: 13 }}>SELL</Text>
+            </Pressable>
+          </View>
+
+          <Text style={{ color: MUTED, fontSize: 11, marginBottom: 6 }}>Type</Text>
+          <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
+            {(['market', 'limit', 'stop'] as const).map((k) => (
+              <Pressable
+                key={k}
+                onPress={() => setOrderType(k)}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 4,
+                  borderWidth: 1,
+                  borderColor: orderType === k ? T.yellow : BORDER,
+                  backgroundColor: orderType === k ? 'rgba(240,185,11,0.1)' : 'transparent',
+                }}
+              >
+                <Text style={{ color: orderType === k ? T.yellow : T.text2, fontSize: 11, fontWeight: '700', textTransform: 'capitalize' }}>
+                  {k}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={{ color: MUTED, fontSize: 11, marginBottom: 4 }}>Price ({orderRow?.currency ?? ''})</Text>
+          <TextInput
+            value={priceStr}
+            onChangeText={setPriceStr}
+            keyboardType="decimal-pad"
+            placeholder="Mark"
+            placeholderTextColor={MUTED}
+            style={{
+              borderWidth: 1,
+              borderColor: BORDER,
+              borderRadius: 6,
+              padding: 10,
+              color: T.text0,
+              marginBottom: 10,
+              backgroundColor: BG,
+            }}
+          />
+
+          <Text style={{ color: MUTED, fontSize: 11, marginBottom: 4 }}>Units</Text>
+          <TextInput
+            value={unitsStr}
+            onChangeText={setUnitsStr}
+            keyboardType="decimal-pad"
+            style={{
+              borderWidth: 1,
+              borderColor: BORDER,
+              borderRadius: 6,
+              padding: 10,
+              color: T.text0,
+              marginBottom: 10,
+              backgroundColor: BG,
+            }}
+          />
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <Text style={{ color: MUTED, fontSize: 11 }}>Take profit</Text>
+            <Pressable onPress={() => setTpOn(!tpOn)}>
+              <Text style={{ color: T.yellow, fontSize: 11, fontWeight: '700' }}>{tpOn ? 'On' : 'Off'}</Text>
+            </Pressable>
+          </View>
+          {tpOn ? (
+            <TextInput
+              value={tpStr}
+              onChangeText={setTpStr}
+              keyboardType="decimal-pad"
+              placeholder="TP price"
+              placeholderTextColor={MUTED}
+              style={{
+                borderWidth: 1,
+                borderColor: BORDER,
+                borderRadius: 6,
+                padding: 10,
+                color: T.text0,
+                marginBottom: 10,
+                backgroundColor: BG,
+              }}
             />
           ) : null}
 
-          <ScrollView
-            style={{ flex: 1, minHeight: 0 }}
-            contentContainerStyle={{ paddingBottom: 48 }}
-            stickyHeaderIndices={[1]}
-            keyboardShouldPersistTaps="handled"
-          >
-        <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 10 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-              <Text style={{ fontSize: 28 }}>{cfg.flag}</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: T.text0, fontSize: 20, fontWeight: '800' }}>{cfg.name}</Text>
-                <Text style={{ color: T.text2, fontSize: 11, marginTop: 4 }}>{describeMarketHours(cfg)}</Text>
-              </View>
-            </View>
-            <View style={{ alignItems: 'flex-end', gap: 6 }}>
-              <View
-                style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                  borderRadius: 8,
-                  backgroundColor: T.bg2,
-                  borderWidth: 1,
-                  borderColor: sessionBadgeColor(sessionLabel, accent),
-                }}
-              >
-                <Text
-                  style={{
-                    color: sessionBadgeColor(sessionLabel, accent),
-                    fontSize: 11,
-                    fontWeight: '900',
-                    letterSpacing: 0.6,
-                  }}
-                >
-                  {sessionLabel}
-                </Text>
-              </View>
-              <Text style={{ color: T.text2, fontSize: 11, fontWeight: '600' }}>{clockStr}</Text>
-            </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <Text style={{ color: MUTED, fontSize: 11 }}>Stop loss</Text>
+            <Pressable onPress={() => setSlOn(!slOn)}>
+              <Text style={{ color: T.yellow, fontSize: 11, fontWeight: '700' }}>{slOn ? 'On' : 'Off'}</Text>
+            </Pressable>
           </View>
-        </View>
-
-        <View style={{ paddingHorizontal: 16 }}>
-          <AadsAdaptiveBanner widthPct={100} />
-        </View>
-
-        <View style={{ backgroundColor: T.bg0, paddingBottom: 8 }}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8, paddingHorizontal: 16, alignItems: 'center' }}
-          >
-            {tabList.map((tid) => {
-              const on = tab === tid;
-              return (
-                <Pressable
-                  key={tid}
-                  onPress={() => setTab(tid)}
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 8,
-                    borderRadius: 10,
-                    backgroundColor: on ? T.bg2 : T.bg1,
-                    borderWidth: 2,
-                    borderColor: on ? accent : T.border,
-                  }}
-                >
-                  <Text style={{ color: on ? T.text0 : T.text2, fontSize: 12, fontWeight: '800' }}>{tabTitle(tid)}</Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-
-        {tab !== 'watchlists' ? (
-          <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+          {slOn ? (
             <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder={
-                tab === 'fo'
-                  ? `Search ${filteredFo.length} F&O symbols…`
-                  : `Search ${cfg.pairs.length} symbols in ${cfg.name}…`
-              }
-              placeholderTextColor={T.text3}
+              value={slStr}
+              onChangeText={setSlStr}
+              keyboardType="decimal-pad"
+              placeholder="SL price"
+              placeholderTextColor={MUTED}
               style={{
-                backgroundColor: T.bg1,
                 borderWidth: 1,
-                borderColor: T.border,
-                borderRadius: T.radiusMd,
+                borderColor: BORDER,
+                borderRadius: 6,
+                padding: 10,
                 color: T.text0,
-                paddingHorizontal: 14,
-                paddingVertical: 12,
-                fontSize: 14,
-                marginBottom: 14,
+                marginBottom: 10,
+                backgroundColor: BG,
               }}
             />
+          ) : null}
 
-            {displayRows.length === 0 ? (
-              <Text style={{ color: T.text3, fontSize: 13, paddingVertical: 24 }}>No symbols match.</Text>
-            ) : (
-              displayRows.map((row, i) => {
-                const routeTicker = row.kind === 'equity' ? row.ticker : row.full;
-                const displaySymbol = row.kind === 'equity' ? row.ticker : row.full;
-                return (
-                  <React.Fragment key={row.full}>
-                    <StockCard row={row} routeTicker={routeTicker} displaySymbol={displaySymbol} />
-                  </React.Fragment>
-                );
-              })
-            )}
-          </View>
-        ) : (
-          <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <Text style={{ color: T.text0, fontSize: 16, fontWeight: '800' }}>
-                {cfg.flag} Watchlists ({wlDocs.length}/{MAX_LISTS_PER_MARKET})
-              </Text>
+          <Text style={{ color: MUTED, fontSize: 11, marginBottom: 4 }}>
+            Leverage (max {cfg.maxLeverage}x)
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+            {[1, 2, 5, 10, 25, Math.min(cfg.maxLeverage, 50)].filter((n, i, a) => a.indexOf(n) === i && n <= cfg.maxLeverage).map((lv) => (
               <Pressable
-                onPress={() => setCreateWlOpen(true)}
-                disabled={wlDocs.length >= MAX_LISTS_PER_MARKET}
+                key={lv}
+                onPress={() => setLeverage(lv)}
                 style={{
-                  paddingHorizontal: 14,
-                  paddingVertical: 8,
-                  borderRadius: 10,
-                  backgroundColor: wlDocs.length >= MAX_LISTS_PER_MARKET ? T.bg3 : T.bg2,
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  borderRadius: 4,
+                  borderWidth: 1,
+                  borderColor: leverage === lv ? T.yellow : BORDER,
+                  backgroundColor: leverage === lv ? 'rgba(240,185,11,0.12)' : 'transparent',
                 }}
               >
-                <Text style={{ color: T.text0, fontSize: 12, fontWeight: '800' }}>+ Create</Text>
+                <Text style={{ color: leverage === lv ? T.yellow : T.text2, fontSize: 11 }}>{lv}x</Text>
               </Pressable>
-            </View>
-
-            {wlLoading ? (
-              <Text style={{ color: T.text3, fontSize: 13 }}>Loading watchlists…</Text>
-            ) : !isFirebaseConfigured || !auth?.currentUser ? (
-              <Text style={{ color: T.text2, fontSize: 13 }}>Sign in to sync watchlists for {cfg.name}.</Text>
-            ) : (
-              <View style={{ gap: 12 }}>
-                {wlDocs.map((wl) => {
-                  const avg = avgPctForSymbols(cfg, wl.symbols, ticks);
-                  const expanded = expandedWlId === wl.id;
-                  return (
-                    <View
-                      key={wl.id}
-                      style={{
-                        borderWidth: 1,
-                        borderColor: expanded ? wl.color : T.border,
-                        borderRadius: T.radiusLg,
-                        backgroundColor: T.bg1,
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <Pressable
-                        onPress={() => setExpandedWlId(expanded ? null : wl.id)}
-                        style={{ padding: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
-                      >
-                        <View style={{ flex: 1, paddingRight: 10 }}>
-                          <Text style={{ color: T.text0, fontSize: 15, fontWeight: '800' }} numberOfLines={1}>
-                            {wl.name}
-                          </Text>
-                          <Text style={{ color: T.text3, fontSize: 12, marginTop: 4 }}>
-                            {wl.symbols.length} stocks · avg{' '}
-                            <Text style={{ color: avg != null && avg >= 0 ? T.green : T.red, fontWeight: '700' }}>
-                              {avg == null ? '—' : fmtPct(avg)}
-                            </Text>
-                          </Text>
-                        </View>
-                        <Text style={{ color: T.text2, fontSize: 18 }}>{expanded ? '▾' : '▸'}</Text>
-                      </Pressable>
-                      {expanded ? (
-                        <View style={{ borderTopWidth: 1, borderColor: T.border, paddingHorizontal: 10, paddingVertical: 8 }}>
-                          {wl.symbols.length === 0 ? (
-                            <Text style={{ color: T.text3, fontSize: 12, padding: 8 }}>Empty list — tap ☆ on a stock to add.</Text>
-                          ) : (
-                            wl.symbols.map((sym) => {
-                              const full = wlSymRoute(sym);
-                              const tk = ticks[full];
-                              const meta = getStockMeta(marketId, sym);
-                              const extras = cfg.yahooPollExtras ?? [];
-                              const isFoSym = extras.includes(sym);
-                              const rowCard: EquityRow | FoRow = isFoSym
-                                ? { kind: 'fo', ticker: sym, full, company: meta.company, sector: meta.sector, tick: tk }
-                                : {
-                                    kind: 'equity',
-                                    ticker: sym,
-                                    full,
-                                    company: meta.company,
-                                    sector: meta.sector,
-                                    tick: tk,
-                                  };
-                              return (
-                                <StockCard
-                                  key={sym}
-                                  row={rowCard}
-                                  routeTicker={sym}
-                                  displaySymbol={sym}
-                                />
-                              );
-                            })
-                          )}
-                        </View>
-                      ) : null}
-                    </View>
-                  );
-                })}
-              </View>
-            )}
+            ))}
           </View>
-        )}
 
-        {/* Footer ads only — not between chart and order flow */}
-        <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 }}>
-          <Text style={{ color: T.text3, fontSize: 9, marginBottom: 4 }}>SPONSORED</Text>
-          <AadsAdaptiveBanner widthPct={100} />
-          <View style={{ height: 8 }} />
-          <MonetagBanner variant="native" />
-        </View>
-          </ScrollView>
-        </View>
-        <BottomPanel marketId={marketId} />
-      </View>
+          <Text style={{ color: MUTED, fontSize: 11, marginBottom: 8 }}>
+            Available:{' '}
+            <Text style={{ color: T.text0, fontWeight: '800' }}>
+              {fmtMoney(balance, cfg.currencySymbol)}
+            </Text>
+          </Text>
+          {markPrice != null ? (
+            <Text style={{ color: MUTED, fontSize: 10, marginBottom: 8 }}>Live {fmtMoney(markPrice, cfg.currencySymbol)}</Text>
+          ) : null}
 
-      <Modal visible={starOpen} transparent animationType="fade">
-        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 }} onPress={() => setStarOpen(false)}>
           <Pressable
-            onPress={(e) => e.stopPropagation()}
+            onPress={() => void onPlaceOrder()}
+            disabled={!orderRow}
             style={{
-              backgroundColor: T.bg1,
-              borderRadius: T.radiusLg,
-              padding: 20,
-              borderWidth: 1,
-              borderColor: T.border,
-              maxHeight: 420,
+              paddingVertical: 14,
+              borderRadius: 8,
+              backgroundColor: side === 'BUY' ? TV_GREEN : TV_RED,
+              alignItems: 'center',
+              opacity: orderRow ? 1 : 0.45,
             }}
           >
-            <Text style={{ color: T.text0, fontWeight: '800', marginBottom: 8 }}>Add to watchlist</Text>
-            <Text style={{ color: T.text2, fontSize: 12, marginBottom: 14 }}>{starTarget?.displayTicker}</Text>
-            {!isFirebaseConfigured || !auth?.currentUser ? (
-              <Text style={{ color: T.text3, fontSize: 13 }}>Sign in to manage lists.</Text>
-            ) : (
-              <ScrollView style={{ maxHeight: 280 }}>
-                {wlDocs.map((wl) => {
-                  const u = (starTarget?.routeTicker ?? '').toUpperCase();
-                  const has = wl.symbols.map((x) => x.toUpperCase()).includes(u);
+            <Text style={{ color: '#fff', fontWeight: '900', fontSize: 14 }}>
+              Place {side} {orderType.toUpperCase()}
+            </Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+
+      {/* Account strip */}
+      <View
+        style={{
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          gap: 12,
+          paddingVertical: 8,
+          paddingHorizontal: 14,
+          borderTopWidth: 1,
+          borderColor: BORDER,
+          backgroundColor: BG,
+        }}
+      >
+        <Text style={{ fontSize: 11, color: MUTED }}>
+          Balance{' '}
+          <Text style={{ color: '#d1d4dc', fontWeight: '800' }}>{fmtMoney(balance, cfg.currencySymbol)}</Text>
+        </Text>
+        <Text style={{ fontSize: 11, color: MUTED }}>
+          Ledger realized{' '}
+          <Text style={{ color: realizedLedger >= 0 ? TV_GREEN : TV_RED, fontWeight: '800' }}>
+            {realizedLedger >= 0 ? '+' : ''}
+            {fmtMoney(realizedLedger, cfg.currencySymbol)}
+          </Text>
+        </Text>
+        <Text style={{ fontSize: 11, color: MUTED }}>
+          Unrealized (ledger){' '}
+          <Text style={{ color: unrealLedger >= 0 ? TV_GREEN : TV_RED, fontWeight: '800' }}>
+            {unrealLedger >= 0 ? '+' : ''}
+            {fmtMoney(unrealLedger, '$')}
+          </Text>
+        </Text>
+      </View>
+
+      {/* Bottom panel */}
+      <View style={{ height: isMobile ? 180 : 200, borderTopWidth: 1, borderColor: BORDER, backgroundColor: PANEL }}>
+        <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: BORDER }}>
+          {(['positions', 'orders', 'history', 'balance'] as const).map((tab) => (
+            <Pressable
+              key={tab}
+              onPress={() => setBottomTab(tab)}
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderBottomWidth: bottomTab === tab ? 2 : 0,
+                borderBottomColor: T.yellow,
+              }}
+            >
+              <Text style={{ color: bottomTab === tab ? T.text0 : MUTED, fontSize: 11, fontWeight: '700', textTransform: 'capitalize' }}>
+                {tab}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 10 }}>
+          {bottomTab === 'positions' && (
+            <>
+              {!auth?.currentUser ? (
+                <Text style={{ color: MUTED, fontSize: 12 }}>Sign in to sync positions.</Text>
+              ) : openTrades.length === 0 ? (
+                <Text style={{ color: MUTED, fontSize: 12 }}>No open paper trades.</Text>
+              ) : (
+                openTrades.map((t) => {
+                  const row = symbols.find((s) => s.symbol === t.symbol);
+                  const mark =
+                    (t.pollKey && ticks[t.pollKey]?.price) ||
+                    livePriceForRow(row, ticks as never) ||
+                    t.price;
+                  const uPnL = grossPnl(t.side, t.price, mark, t.units);
+                  const profit = uPnL >= 0;
                   return (
-                    <Pressable
-                      key={wl.id}
-                      onPress={() => starTarget && toggleSymbolInList(wl, starTarget.routeTicker)}
+                    <View
+                      key={t.id}
                       style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        paddingVertical: 12,
-                        borderBottomWidth: 1,
-                        borderColor: T.border,
+                        padding: 10,
+                        marginBottom: 8,
+                        borderRadius: 6,
+                        borderWidth: 1,
+                        borderColor: BORDER,
+                        backgroundColor: profit ? 'rgba(38,166,154,0.08)' : 'rgba(239,83,80,0.08)',
                       }}
                     >
-                      <Text style={{ color: T.text0, fontWeight: '700', flex: 1 }} numberOfLines={1}>
-                        {has ? '★' : '☆'} {wl.name}
+                      <Text style={{ color: T.text0, fontSize: 12, fontWeight: '800' }} numberOfLines={1}>
+                        {t.symbol} · {t.side} · {t.units} @ {fmtMoney(t.price, cfg.currencySymbol)}
                       </Text>
-                      <Text style={{ color: T.text3, fontSize: 12 }}>{wl.symbols.length}</Text>
-                    </Pressable>
+                      <Text style={{ color: profit ? TV_GREEN : TV_RED, fontSize: 11, marginTop: 4 }}>
+                        uPnL {profit ? '+' : ''}
+                        {fmtMoney(uPnL, cfg.currencySymbol)}
+                      </Text>
+                      <Pressable onPress={() => void onCloseTrade(t)} style={{ marginTop: 8, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, backgroundColor: BG, borderRadius: 4, borderWidth: 1, borderColor: BORDER }}>
+                        <Text style={{ color: T.text0, fontSize: 11, fontWeight: '700' }}>Close</Text>
+                      </Pressable>
+                    </View>
                   );
-                })}
-              </ScrollView>
-            )}
-            <Pressable
-              onPress={() => setStarOpen(false)}
-              style={{ marginTop: 16, alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 12 }}
-            >
-              <Text style={{ color: accent, fontWeight: '800' }}>Done</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal visible={createWlOpen} transparent animationType="fade">
-        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 24 }} onPress={() => setCreateWlOpen(false)}>
-          <Pressable
-            onPress={(e) => e.stopPropagation()}
-            style={{ backgroundColor: T.bg1, borderRadius: T.radiusLg, padding: 20, borderWidth: 1, borderColor: T.border }}
-          >
-            <Text style={{ color: T.text0, fontWeight: '800', marginBottom: 12 }}>New watchlist</Text>
-            <TextInput
-              value={newWlName}
-              onChangeText={setNewWlName}
-              placeholder={`My ${cfg.name} Picks`}
-              placeholderTextColor={T.text3}
-              style={{
-                borderWidth: 1,
-                borderColor: T.border,
-                borderRadius: T.radiusMd,
-                padding: 12,
-                color: T.text0,
-                marginBottom: 12,
-              }}
-            />
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-              {PRESET_COLORS.map((c) => (
-                <Pressable
-                  key={c}
-                  onPress={() => setNewWlColor(c)}
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 16,
-                    backgroundColor: c,
-                    borderWidth: newWlColor === c ? 3 : 0,
-                    borderColor: T.text0,
-                  }}
-                />
-              ))}
-            </View>
-            <Pressable
-              onPress={onCreateWatchlist}
-              style={{ backgroundColor: newWlColor, padding: 14, borderRadius: T.radiusMd, alignItems: 'center' }}
-            >
-              <Text style={{ color: '#000', fontWeight: '800' }}>Create</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+                })
+              )}
+            </>
+          )}
+          {bottomTab === 'orders' && (
+            <Text style={{ color: MUTED, fontSize: 12 }}>Limit/stop orders execute in the main trade flow. Paper stops stored on the trade row.</Text>
+          )}
+          {bottomTab === 'history' && (
+            <>
+              {histTrades.length === 0 ? (
+                <Text style={{ color: MUTED, fontSize: 12 }}>No closed paper trades yet.</Text>
+              ) : (
+                histTrades.map((t) => (
+                  <View key={t.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: BORDER }}>
+                    <Text style={{ color: T.text2, fontSize: 11 }}>{t.symbol}</Text>
+                    <Text style={{ color: (t.pnl ?? 0) >= 0 ? TV_GREEN : TV_RED, fontSize: 11 }}>
+                      PnL {fmtMoney(t.pnl ?? 0, cfg.currencySymbol)} @ {t.closePrice != null ? fmtMoney(t.closePrice, cfg.currencySymbol) : '—'}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </>
+          )}
+          {bottomTab === 'balance' && (
+            <Text style={{ color: MUTED, fontSize: 12 }}>
+              Wallet balance updates when you close a paper trade (cloud balance). Main portfolio also uses the Ledger tab under Dashboard.
+            </Text>
+          )}
+        </ScrollView>
+      </View>
     </View>
   );
 }

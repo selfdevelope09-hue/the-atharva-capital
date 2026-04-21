@@ -12,7 +12,7 @@ function requireUid(): string {
 
 function requireDb() {
   if (!isFirebaseConfigured || !db) {
-    throw new Error('[dbManager] Firestore is not configured (missing EXPO_PUBLIC_FIREBASE_* env).');
+    throw new Error('[dbManager] Firestore is not configured — check config/firebaseConfig.ts');
   }
   return db;
 }

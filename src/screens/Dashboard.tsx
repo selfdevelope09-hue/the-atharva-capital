@@ -3,11 +3,9 @@
  */
 
 import type { AppMarket } from '@/constants/appMarkets';
-import { BannerAd } from '@/src/components/ads/BannerAd';
 import { useRouter, type Href } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Dimensions,
   FlatList,
   Modal,
   Platform,
@@ -17,6 +15,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import Svg, { Defs, Line, LinearGradient, Polygon, Polyline, Stop, Text as SvgText } from 'react-native-svg';
 
@@ -44,8 +43,6 @@ import {
   winStreak,
 } from '@/src/screens/dashboardMath';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
-
-const W = Dimensions.get('window').width - 32;
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -183,6 +180,8 @@ export default function Dashboard() {
 
   const clientId = useProfileStore((s) => s.clientId);
   const { isNavRail } = useBreakpoint();
+  const { width: windowWidth } = useWindowDimensions();
+  const chartWidth = Math.max(280, windowWidth - 32);
 
   useEffect(() => {
     void refreshFx();
@@ -322,10 +321,6 @@ export default function Dashboard() {
         </View>
         <MarketSelector active={marketSel} onChange={onSelChange} />
 
-        <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-          <BannerAd slot="top" />
-        </View>
-
         <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 8 }}>
           <Text style={{ color: T.text2, fontSize: 12 }}>
             Client {clientId ?? '—'} · {marketSel === 'all' ? 'All markets' : MARKETS[marketSel as MarketId].name}
@@ -382,12 +377,12 @@ export default function Dashboard() {
               );
             })}
           </ScrollView>
-          <EquityChart pts={equityPts} dd={ddVal} width={W} height={160} />
+          <EquityChart pts={equityPts} dd={ddVal} width={chartWidth} height={160} />
         </View>
 
         <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
           <Text style={{ color: T.text0, fontWeight: '800', marginBottom: 8 }}>Calendar (realized, local ccy)</Text>
-          <Heatmap daily={dailyMap} width={W} />
+          <Heatmap daily={dailyMap} width={chartWidth} />
         </View>
 
 
@@ -546,16 +541,7 @@ export default function Dashboard() {
             )}
           />
         </View>
-        <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
-          <BannerAd slot="bottom" />
-        </View>
       </ScrollView>
-
-      {isNavRail && Platform.OS === 'web' ? (
-        <View style={{ paddingTop: 12, paddingRight: 8, width: 300 }}>
-          <BannerAd slot="inline" />
-        </View>
-      ) : null}
 
       {chartPos ? (
         <PositionChartModal

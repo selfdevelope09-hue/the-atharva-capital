@@ -4,8 +4,6 @@
 
 import type { AppMarket } from '@/constants/appMarkets';
 import { ALL_APP_MARKETS, TOP_UP_AMOUNT } from '@/constants/appMarkets';
-import { BannerAd } from '@/src/components/ads/BannerAd';
-import { RewardedAd } from '@/src/components/ads/RewardedAd';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import Svg, { G, Path } from 'react-native-svg';
@@ -16,7 +14,6 @@ import { MARKETS, type MarketId } from '@/src/constants/markets';
 import { fmtMoney, fmtPct, T } from '@/src/constants/theme';
 import { useLedgerStore } from '@/store/ledgerStore';
 import { useMultiMarketBalanceStore } from '@/store/multiMarketBalanceStore';
-import { useAdRewardsStore } from '@/store/adRewardsStore';
 
 function PieSlice({
   cx,
@@ -93,22 +90,6 @@ export default function Wallet() {
         <Text style={{ color: T.text2, fontSize: 13, marginBottom: 16 }}>
           FX via Frankfurter (USD base). Signed in: {isFirebaseConfigured && auth?.currentUser ? auth.currentUser.email ?? auth.currentUser.uid : 'local'}
         </Text>
-
-        <BannerAd slot="top" />
-
-        <View style={{ backgroundColor: T.bg1, borderRadius: T.radiusMd, borderWidth: 1, borderColor: T.border, padding: 14, marginBottom: 16, gap: 10 }}>
-          <Text style={{ color: T.text0, fontWeight: '800' }}>Watch Ad → Get +$500</Text>
-          <Text style={{ color: T.text3, fontSize: 12 }}>Watch a short ad to credit your US sleeve with $500 virtual USD and unlock premium features for 24h.</Text>
-          <RewardedAd
-            label="Watch Ad → Get +$500"
-            caption="Opens ad in new tab · reward granted after 15s"
-            onReward={() => {
-              useAdRewardsStore.getState().addVirtualCash(500);
-              useAdRewardsStore.getState().grantUnlocksFromReward();
-              Alert.alert('Reward granted', '+$500 virtual USD · Premium unlocked for 24h');
-            }}
-          />
-        </View>
 
         <View style={{ backgroundColor: T.bg1, borderRadius: T.radiusLg, borderWidth: 1, borderColor: T.border, padding: 16, marginBottom: 16 }}>
           <Text style={{ color: T.text3, fontSize: 11, fontWeight: '700' }}>TOTAL PORTFOLIO (USD)</Text>

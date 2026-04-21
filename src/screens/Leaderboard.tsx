@@ -1,9 +1,7 @@
 /**
- * Leaderboard — per-market tabs, real Firebase data, search, user cards, ads.
- * All ad injection done via useEffect DOM APIs (no raw HTML JSX).
+ * Leaderboard — per-market tabs, real Firebase data, search, user cards.
  *
  * Firestore: leaderboard/{market}/entries/{uid}
- * Ad rules: Video zone at tab top, native banner after every 3 rows.
  */
 
 import { useRouter } from 'expo-router';
@@ -14,12 +12,11 @@ import {
   orderBy,
   query,
 } from 'firebase/firestore';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
   Image,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -28,8 +25,6 @@ import {
 } from 'react-native';
 
 import { auth, db, isFirebaseConfigured } from '@/config/firebaseConfig';
-import { AadsAdaptiveBanner } from '@/src/components/ads/AadsAdaptiveBanner';
-import { MonetagBanner } from '@/src/components/ads/MonetagBanner';
 import { getOrCreateConversation } from '@/services/firebase/chatRepository';
 import { T } from '@/src/constants/theme';
 import { useProfileStore } from '@/store/profileStore';
@@ -46,28 +41,6 @@ interface LBEntry {
   trades: number;
   pnl: number;
   winRate: number;
-}
-
-// ── Inline ad banner (AADS) between leaderboard rows ─────────────────────────
-function InlineBanner({ slotId }: { slotId: string }) {
-  const ref = useRef<View>(null);
-
-  useEffect(() => {
-    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-    const node = ref.current as unknown as HTMLElement | null;
-    if (!node) return;
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute('data-aa', '2435144');
-    iframe.src = `//acceptable.a-ads.com/2435144/?size=Adaptive&t=${Date.now() + Math.random()}`;
-    iframe.style.cssText = 'border:0;width:100%;height:60px;overflow:hidden;display:block;pointer-events:auto';
-    iframe.setAttribute('scrolling', 'no');
-    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
-    node.appendChild(iframe);
-    return () => { try { node.removeChild(iframe); } catch { /* ignore */ } };
-  }, [slotId]);
-
-  if (Platform.OS !== 'web') return null;
-  return <View ref={ref} style={{ width: '100%', height: 60, marginVertical: 4 }} />;
 }
 
 // ── Avatar ─────────────────────────────────────────────────────────────────────
@@ -269,21 +242,13 @@ export default function Leaderboard() {
     return entries.filter((e) => e.displayName.toLowerCase().includes(q));
   }, [entries, search]);
 
-  // Build flat list data with ad slots (every 3 rows)
-  type ListItem = { type: 'row'; entry: LBEntry; rank: number } | { type: 'ad'; id: string };
-  const listData = useMemo<ListItem[]>(() => {
-    const items: ListItem[] = [];
-    filtered.forEach((entry, i) => {
-      items.push({ type: 'row', entry, rank: i + 1 });
-      if ((i + 1) % 3 === 0) items.push({ type: 'ad', id: `ad-${tab}-${i}` });
-    });
-    return items;
-  }, [filtered, tab]);
+  type ListItem = { type: 'row'; entry: LBEntry; rank: number };
+  const listData = useMemo<ListItem[]>(
+    () => filtered.map((entry, i) => ({ type: 'row' as const, entry, rank: i + 1 })),
+    [filtered],
+  );
 
   const renderItem = ({ item }: { item: ListItem }) => {
-    if (item.type === 'ad') {
-      return <InlineBanner slotId={item.id} />;
-    }
     const { entry, rank } = item;
     const isMe = entry.uid === myUid;
     const pnlColor = entry.pnl >= 0 ? T.green : T.red;
@@ -322,11 +287,6 @@ export default function Leaderboard() {
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg0 }}>
-      {/* A-ADS below title strip (non-intrusive) */}
-      <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-        <AadsAdaptiveBanner widthPct={100} />
-      </View>
-
       {/* Header */}
       <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 }}>
         <Text style={{ color: T.text0, fontSize: 22, fontWeight: '800' }}>🏆 Leaderboard</Text>
@@ -373,12 +333,6 @@ export default function Leaderboard() {
         })}
       </ScrollView>
 
-      {/* Video / native zone (Monetag placeholder — no popunder scripts) */}
-      <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-        <Text style={{ color: T.text3, fontSize: 9, marginBottom: 4 }}>ADVERTISEMENT</Text>
-        <MonetagBanner variant="video" />
-      </View>
-
       {/* Table header */}
       <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: T.border }}>
         <Text style={{ width: 26, color: T.text3, fontSize: 10, fontWeight: '700' }}>#</Text>
@@ -391,8 +345,9 @@ export default function Leaderboard() {
         <View>{[0, 1, 2, 3, 4, 5].map((i) => <SkeletonRow key={i} />)}</View>
       ) : (
         <FlatList
+          style={{ flex: 1 }}
           data={listData}
-          keyExtractor={(item) => item.type === 'row' ? `row-${item.entry.uid}` : item.id}
+          keyExtractor={(item) => `row-${item.entry.uid}-${item.rank}`}
           renderItem={renderItem}
           ListEmptyComponent={
             <View style={{ padding: 32, alignItems: 'center' }}>

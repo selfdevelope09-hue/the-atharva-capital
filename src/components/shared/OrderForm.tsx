@@ -1,8 +1,14 @@
 import { SliderInput as Slider } from './SliderInput';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, Text, TextInput, View, ViewStyle } from 'react-native';
 import { showRewardedVideoForWalletTopUp, VIDEO_REWARD_TOPUP_USD } from '@/services/ads/VideoAdManager';
 import { MarketConfig } from '../../constants/markets';
+import {
+  inferPipSize,
+  pipsFromPriceDistance,
+  snapQuantity,
+  type MarketRegionUiConfig,
+} from '../../constants/marketRegionUi';
 import { fmtMoney, FEE_DEFAULTS, T } from '../../constants/theme';
 
 type Side = 'long' | 'short';
@@ -39,6 +45,13 @@ export interface OrderFormProps {
   chartSL?: number | null;
   onChartConfirm?: () => void;
   onChartDiscard?: () => void;
+
+  /** Localized panel rules from `useMarketConfig` / `RegionalOrderForm`. */
+  regionUi?: MarketRegionUiConfig | null;
+  equityMode?: string;
+  onEquityModeChange?: (id: string) => void;
+  /** Hide rewarded-video promo (e.g. chart / trade screen — no ads). */
+  hideRewardVideo?: boolean;
 }
 
 const LEVERAGE_PRESETS = [1, 2, 5, 10, 25, 50, 75, 100, 125];
@@ -59,6 +72,10 @@ export function OrderForm(props: OrderFormProps) {
     chartSL,
     onChartConfirm,
     onChartDiscard,
+    regionUi = null,
+    equityMode = 'default',
+    onEquityModeChange,
+    hideRewardVideo = false,
   } = props;
 
   const [amountStr, setAmountStr] = useState<string>(value.amount ? String(value.amount) : '');
@@ -66,8 +83,15 @@ export function OrderForm(props: OrderFormProps) {
   const [tpStr, setTpStr] = useState<string>(value.tp != null ? String(value.tp) : '');
   const [slStr, setSlStr] = useState<string>(value.sl != null ? String(value.sl) : '');
 
-  const maxLev = market.maxLeverage ?? 1;
+  const maxLev = useMemo(() => {
+    const cap = market.maxLeverage ?? 1;
+    if (!regionUi) return cap;
+    if (regionUi.leverage.show === false) return 1;
+    return Math.min(cap, regionUi.leverage.max);
+  }, [regionUi, market.maxLeverage]);
+
   const price = value.orderType === 'limit' && value.limitPrice ? value.limitPrice : (lastPrice ?? 0);
+  const priceDecimals = regionUi?.pricing.priceDecimals ?? 2;
 
   const feeRate = value.feeRole === 'maker' ? market.fees?.maker ?? FEE_DEFAULTS.maker : market.fees?.taker ?? FEE_DEFAULTS.taker;
   const notional = value.amount * price;
@@ -88,6 +112,12 @@ export function OrderForm(props: OrderFormProps) {
   }, [value.sl, value.amount, value.side, price]);
 
   const update = (patch: Partial<OrderFormValue>) => onChange({ ...value, ...patch });
+
+  useEffect(() => {
+    if (value.leverage > maxLev) {
+      onChange({ ...value, leverage: maxLev });
+    }
+  }, [maxLev]); // eslint-disable-line react-hooks/exhaustive-deps -- clamp when regional cap changes
 
   const setPctOfBalance = (pct: number) => {
     if (!price) return;
@@ -122,6 +152,37 @@ export function OrderForm(props: OrderFormProps) {
 
   const cs = market.currencySymbol;
 
+  const regionalFeeRows = useMemo(() => {
+    if (!regionUi?.feeLines?.length) return [];
+    return regionUi.feeLines.map((line) => ({
+      label: line.label,
+      value: line.format(
+        line.estimate({ notional, side: value.side, price: price || 0 }),
+        cs
+      ),
+    }));
+  }, [regionUi, notional, value.side, price, cs]);
+
+  const pipSize = price > 0 ? inferPipSize(price) : 0.0001;
+  const tpPips = value.tp != null && price ? pipsFromPriceDistance(price, value.tp, pipSize, value.side) : null;
+  const slPips = value.sl != null && price ? pipsFromPriceDistance(price, value.sl, pipSize, value.side) : null;
+
+  const longLabel = regionUi?.labels.buyLong ?? 'Long';
+  const shortLabel = regionUi?.labels.sellShort ?? 'Short';
+  const amountLabel = regionUi?.labels.amount ?? `Amount (${market.pairs[0] ?? 'units'})`;
+
+  const snapAmountField = () => {
+    if (!regionUi) return;
+    const q = parseNum(amountStr);
+    if (q == null) return;
+    const s = snapQuantity(q, regionUi.quantity);
+    if (Math.abs(s - q) > 1e-12) {
+      const dec = regionUi.quantity.fractional ? Math.min(6, priceDecimals) : 0;
+      setAmountStr(dec > 0 ? s.toFixed(dec) : String(s));
+      update({ amount: s });
+    }
+  };
+
   return (
     <View style={[{ backgroundColor: T.bg1, borderRadius: T.radiusLg, borderWidth: 1, borderColor: T.border, padding: 16, gap: 14 }, style]}>
       <SegmentRow
@@ -135,21 +196,49 @@ export function OrderForm(props: OrderFormProps) {
 
       <SegmentRow
         options={[
-          { id: 'long', label: 'Long', activeColor: T.green },
-          { id: 'short', label: 'Short', activeColor: T.red },
+          { id: 'long', label: longLabel, activeColor: T.green },
+          { id: 'short', label: shortLabel, activeColor: T.red },
         ]}
         value={value.side}
         onChange={(id) => update({ side: id as Side })}
       />
 
-      <SegmentRow
-        options={[
-          { id: 'maker', label: `Maker ${pct(market.fees?.maker ?? FEE_DEFAULTS.maker)}` },
-          { id: 'taker', label: `Taker ${pct(market.fees?.taker ?? FEE_DEFAULTS.taker)}` },
-        ]}
-        value={value.feeRole}
-        onChange={(id) => update({ feeRole: id as FeeRole })}
-      />
+      {regionUi?.equityModes && regionUi.equityModes.length > 0 && onEquityModeChange ? (
+        <SegmentRow
+          options={regionUi.equityModes.map((m) => ({ id: m.id, label: m.label }))}
+          value={equityMode}
+          onChange={(id) => onEquityModeChange(id)}
+        />
+      ) : null}
+
+      {regionUi?.region !== 'forex' ? (
+        <SegmentRow
+          options={[
+            { id: 'maker', label: `Maker ${pct(market.fees?.maker ?? FEE_DEFAULTS.maker)}` },
+            { id: 'taker', label: `Taker ${pct(market.fees?.taker ?? FEE_DEFAULTS.taker)}` },
+          ]}
+          value={value.feeRole}
+          onChange={(id) => update({ feeRole: id as FeeRole })}
+        />
+      ) : null}
+
+      {regionUi?.crypto?.showFundingCountdown ? (
+        <Text style={{ color: T.text3, fontSize: 11, textAlign: 'center' }}>
+          Next funding (demo): ~{' '}
+          {String(Math.max(0, 3600 - (Math.floor(Date.now() / 1000) % 3600))).padStart(2, '0')}
+          m
+        </Text>
+      ) : null}
+
+      {regionUi?.marginMode ? (
+        <Text style={{ color: T.text2, fontSize: 11, textAlign: 'center' }}>
+          Margin: {regionUi.marginMode === 'cross' ? 'Cross' : 'Isolated'} (toggle in full terminal)
+        </Text>
+      ) : null}
+
+      {regionUi?.pricing.showPricesInPence ? (
+        <Text style={{ color: T.text3, fontSize: 10 }}>Some LSE listings quote in GBX (pence) on feeds — verify venue.</Text>
+      ) : null}
 
       {value.orderType === 'limit' && (
         <Field label={`Limit price (${cs})`}>
@@ -157,18 +246,25 @@ export function OrderForm(props: OrderFormProps) {
             keyboardType="decimal-pad"
             value={limitStr}
             onChangeText={(s) => { setLimitStr(s); update({ limitPrice: parseNum(s) }); }}
-            placeholder={price ? price.toFixed(2) : '0.00'}
+            placeholder={price ? price.toFixed(priceDecimals) : '0.00'}
             placeholderTextColor={T.text3}
             style={inputStyle}
           />
         </Field>
       )}
 
-      <Field label={`Amount (${market.pairs[0] ?? 'units'})`}>
+      <Field label={amountLabel}>
+        {regionUi?.quantity.lotLabel ? (
+          <Text style={{ color: T.text3, fontSize: 10, marginBottom: 6 }}>
+            {regionUi.quantity.lotLabel}: step {regionUi.quantity.step}
+            {regionUi.quantity.lotSize ? ` · lot ${regionUi.quantity.lotSize}` : ''}
+          </Text>
+        ) : null}
         <TextInput
           keyboardType="decimal-pad"
           value={amountStr}
           onChangeText={(s) => { setAmountStr(s); update({ amount: parseNum(s) ?? 0 }); }}
+          onBlur={snapAmountField}
           placeholder="0.00"
           placeholderTextColor={T.text3}
           style={inputStyle}
@@ -186,32 +282,34 @@ export function OrderForm(props: OrderFormProps) {
         </View>
       </Field>
 
-      <Field label={`Leverage  ·  ${value.leverage}x   (max ${maxLev}x)`}>
-        <Slider
-          minimumValue={1}
-          maximumValue={maxLev}
-          step={1}
-          value={value.leverage}
-          minimumTrackTintColor={market.accentColor ?? T.yellow}
-          maximumTrackTintColor={T.border}
-          thumbTintColor={market.accentColor ?? T.yellow}
-          onValueChange={(v) => update({ leverage: Math.round(v) })}
-        />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-          {LEVERAGE_PRESETS.filter((p) => p <= maxLev).map((p) => {
-            const active = value.leverage === p;
-            return (
-              <Pressable
-                key={p}
-                onPress={() => update({ leverage: p })}
-                style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: T.radiusSm, backgroundColor: active ? market.accentColor ?? T.yellow : T.bg2 }}
-              >
-                <Text style={{ color: active ? '#000' : T.text1, fontSize: 12, fontWeight: '700' }}>{p}x</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </Field>
+      {regionUi?.leverage.show !== false ? (
+        <Field label={`Leverage  ·  ${value.leverage}x   (max ${maxLev}x)`}>
+          <Slider
+            minimumValue={1}
+            maximumValue={maxLev}
+            step={regionUi?.leverage.step ?? 1}
+            value={Math.min(value.leverage, maxLev)}
+            minimumTrackTintColor={market.accentColor ?? T.yellow}
+            maximumTrackTintColor={T.border}
+            thumbTintColor={market.accentColor ?? T.yellow}
+            onValueChange={(v) => update({ leverage: Math.round(v) })}
+          />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            {LEVERAGE_PRESETS.filter((p) => p <= maxLev).map((p) => {
+              const active = value.leverage === p;
+              return (
+                <Pressable
+                  key={p}
+                  onPress={() => update({ leverage: p })}
+                  style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: T.radiusSm, backgroundColor: active ? market.accentColor ?? T.yellow : T.bg2 }}
+                >
+                  <Text style={{ color: active ? '#000' : T.text1, fontSize: 12, fontWeight: '700' }}>{p}x</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Field>
+      ) : null}
 
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <View style={{ flex: 1 }}>
@@ -240,6 +338,19 @@ export function OrderForm(props: OrderFormProps) {
         </View>
       </View>
 
+      {regionUi?.region === 'forex' && (tpPips != null || slPips != null) ? (
+        <Text style={{ color: T.text3, fontSize: 11 }}>
+          TP distance: {tpPips != null ? `${tpPips.toFixed(1)} pips` : '—'} · SL distance:{' '}
+          {slPips != null ? `${slPips.toFixed(1)} pips` : '—'}
+        </Text>
+      ) : null}
+
+      {regionUi?.pricing.showDailyPriceLimit ? (
+        <Text style={{ color: T.text3, fontSize: 10 }}>
+          Daily limit band (demo): ±{((regionUi.pricing.dailyLimitPct ?? 0.1) * 100).toFixed(0)}% from prior close
+        </Text>
+      ) : null}
+
       <Pressable
         onPress={setAutoTpSl}
         style={{ alignSelf: 'flex-end', paddingVertical: 6, paddingHorizontal: 10, borderRadius: T.radiusSm, backgroundColor: T.bg2 }}
@@ -253,36 +364,40 @@ export function OrderForm(props: OrderFormProps) {
         <SummaryRow label="Margin" value={fmtMoney(margin, cs)} />
         <SummaryRow label={`Fee (${pct(feeRate)})`} value={fmtMoney(fee, cs)} />
         <SummaryRow label="Total cost" value={fmtMoney(total, cs)} strong />
+        {regionalFeeRows.map((row) => (
+          <SummaryRow key={row.label} label={row.label} value={row.value} />
+        ))}
         {estProfit != null && <SummaryRow label="Est. profit @ TP" value={fmtMoney(estProfit, cs)} valueColor={estProfit >= 0 ? T.green : T.red} />}
         {estLoss != null && <SummaryRow label="Est. loss @ SL" value={fmtMoney(estLoss, cs)} valueColor={estLoss >= 0 ? T.green : T.red} />}
       </View>
 
-      {/* Watch video reward */}
-      <Pressable
-        onPress={async () => {
-          if (Platform.OS === 'web') {
-            Alert.alert('Rewarded video', 'Not available in the browser. Use the iOS or Android app for AdMob rewards.');
-            return;
-          }
-          const r = await showRewardedVideoForWalletTopUp();
-          if (r.ok) {
-            Alert.alert('Reward', `+$${VIDEO_REWARD_TOPUP_USD.toLocaleString()} virtual USD credited.`);
-          } else {
-            Alert.alert('Rewarded video', r.error ?? 'Try again on a device build with AdMob.');
-          }
-        }}
-        style={{
-          paddingVertical: 14,
-          borderRadius: T.radiusMd,
-          alignItems: 'center',
-          backgroundColor: T.bg0,
-          borderWidth: 2,
-          borderColor: T.yellow,
-          ...Platform.select({ ios: { shadowColor: T.yellow, shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 0 } }, android: { elevation: 10 }, default: {} }),
-        }}
-      >
-        <Text style={{ color: T.yellow, fontWeight: '800', fontSize: 13, letterSpacing: 0.3 }}>Watch Video to Claim $5,000</Text>
-      </Pressable>
+      {!hideRewardVideo ? (
+        <Pressable
+          onPress={async () => {
+            if (Platform.OS === 'web') {
+              Alert.alert('Rewarded video', 'Not available in the browser. Use the iOS or Android app for AdMob rewards.');
+              return;
+            }
+            const r = await showRewardedVideoForWalletTopUp();
+            if (r.ok) {
+              Alert.alert('Reward', `+$${VIDEO_REWARD_TOPUP_USD.toLocaleString()} virtual USD credited.`);
+            } else {
+              Alert.alert('Rewarded video', r.error ?? 'Try again on a device build with AdMob.');
+            }
+          }}
+          style={{
+            paddingVertical: 14,
+            borderRadius: T.radiusMd,
+            alignItems: 'center',
+            backgroundColor: T.bg0,
+            borderWidth: 2,
+            borderColor: T.yellow,
+            ...Platform.select({ ios: { shadowColor: T.yellow, shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 0 } }, android: { elevation: 10 }, default: {} }),
+          }}
+        >
+          <Text style={{ color: T.yellow, fontWeight: '800', fontSize: 13, letterSpacing: 0.3 }}>Watch Video to Claim $5,000</Text>
+        </Pressable>
+      ) : null}
 
       {/* Trade action area — either chart-mode status or trade buttons */}
       {!chartMode ? (
@@ -315,7 +430,7 @@ export function OrderForm(props: OrderFormProps) {
             }}
           >
             <Text style={{ color: '#000', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 }}>
-              {value.side === 'long' ? '▲ Buy / Long' : '▼ Sell / Short'}
+              {value.side === 'long' ? `▲ ${longLabel}` : `▼ ${shortLabel}`}
             </Text>
           </Pressable>
         </View>

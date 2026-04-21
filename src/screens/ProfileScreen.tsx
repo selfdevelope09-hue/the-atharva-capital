@@ -43,6 +43,8 @@ const S = {
 
 interface Props {
   userId: string;
+  /** When true (e.g. `/profile?edit=1`), open the editor once profile loads. */
+  initialEdit?: boolean;
 }
 
 function Avatar({ url, name, size = 64 }: { url: string; name: string; size?: number }) {
@@ -90,7 +92,7 @@ function SkeletonRow() {
   );
 }
 
-export function ProfileScreen({ userId }: Props) {
+export function ProfileScreen({ userId, initialEdit }: Props) {
   const router = useRouter();
   const myUid = auth?.currentUser?.uid ?? '';
   const isOwn = myUid === userId;
@@ -103,6 +105,8 @@ export function ProfileScreen({ userId }: Props) {
   const [saving, setSaving] = useState(false);
   const [following, setFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+
+  const appliedInitialEdit = React.useRef(false);
 
   const closedTrades = useLedgerStore((s) => s.closedTrades);
 
@@ -119,6 +123,14 @@ export function ProfileScreen({ userId }: Props) {
       isFollowing(userId).then(setFollowing);
     }
   }, [userId, isOwn, myUid]);
+
+  useEffect(() => {
+    if (!initialEdit || !isOwn || !profile || appliedInitialEdit.current) return;
+    appliedInitialEdit.current = true;
+    setEditing(true);
+    setNameDraft(profile.displayName);
+    setBioDraft(profile.bio ?? '');
+  }, [initialEdit, isOwn, profile]);
 
   const handleSave = async () => {
     setSaving(true);

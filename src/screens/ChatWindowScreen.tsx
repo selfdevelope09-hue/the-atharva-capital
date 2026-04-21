@@ -17,6 +17,7 @@ import {
 
 import { auth } from '@/config/firebaseConfig';
 import {
+  getOtherParticipantUid,
   markConversationRead,
   sendMessage,
   subscribeMessages,
@@ -24,6 +25,7 @@ import {
 } from '@/services/firebase/chatRepository';
 import { getProfile, type UserProfile } from '@/services/firebase/userProfileRepository';
 import { T } from '@/src/constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   conversationId: string;
@@ -56,6 +58,7 @@ function timeStr(iso: string): string {
 }
 
 export function ChatWindowScreen({ conversationId, otherUid }: Props) {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const myUid = auth?.currentUser?.uid ?? '';
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -63,13 +66,22 @@ export function ChatWindowScreen({ conversationId, otherUid }: Props) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const flatRef = useRef<FlatList>(null);
+  const [resolvedOtherUid, setResolvedOtherUid] = useState<string | undefined>(otherUid);
 
-  // Load other user's profile
   useEffect(() => {
     if (otherUid) {
-      getProfile(otherUid).then(setOtherProfile);
+      setResolvedOtherUid(otherUid);
+      return;
     }
-  }, [otherUid]);
+    void getOtherParticipantUid(conversationId).then((uid) => {
+      if (uid) setResolvedOtherUid(uid);
+    });
+  }, [conversationId, otherUid]);
+
+  useEffect(() => {
+    if (!resolvedOtherUid) return;
+    getProfile(resolvedOtherUid).then(setOtherProfile);
+  }, [resolvedOtherUid]);
 
   // Subscribe to messages
   useEffect(() => {
@@ -127,13 +139,20 @@ export function ChatWindowScreen({ conversationId, otherUid }: Props) {
             />
           )}
           <View style={{
-            maxWidth: '72%',
+            maxWidth: '76%',
             backgroundColor: isMine ? T.yellow : T.bg2,
-            borderRadius: 18,
-            borderBottomRightRadius: isMine ? 4 : 18,
-            borderBottomLeftRadius: isMine ? 18 : 4,
-            paddingHorizontal: 14,
-            paddingVertical: 9,
+            borderRadius: 22,
+            borderBottomRightRadius: isMine ? 6 : 22,
+            borderBottomLeftRadius: isMine ? 22 : 6,
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderWidth: isMine ? 0 : 1,
+            borderColor: T.border,
+            ...(isMine && Platform.OS === 'web'
+              ? { shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }
+              : isMine
+                ? { elevation: 2 }
+                : {}),
           }}>
             <Text style={{ color: isMine ? '#000' : T.text0, fontSize: 14, lineHeight: 20 }}>
               {item.text}
@@ -148,25 +167,38 @@ export function ChatWindowScreen({ conversationId, otherUid }: Props) {
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: T.bg0 }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={60}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 8 + insets.top : 0}
     >
-      {/* Top bar */}
+      {/* Top bar — DM-style */}
       <View style={{
         flexDirection: 'row', alignItems: 'center', gap: 12,
-        padding: 14, borderBottomWidth: 1, borderBottomColor: T.border,
-        backgroundColor: T.bg1,
+        paddingHorizontal: 12, paddingVertical: 12, paddingTop: 8 + insets.top,
+        borderBottomWidth: 1, borderBottomColor: T.border,
+        backgroundColor: T.bg0,
       }}>
-        <Pressable onPress={() => router.back()} style={{ paddingRight: 4 }}>
-          <Text style={{ color: T.yellow, fontSize: 22 }}>‹</Text>
+        <Pressable onPress={() => router.back()} hitSlop={10} style={{ padding: 6 }}>
+          <Text style={{ color: T.text0, fontSize: 26, fontWeight: '300', lineHeight: 28 }}>‹</Text>
         </Pressable>
-        <Avatar url={otherProfile?.photoURL ?? ''} name={otherProfile?.displayName ?? '?'} size={36} />
-        <View style={{ flex: 1 }}>
-          <Text style={{ color: T.text0, fontWeight: '700', fontSize: 15 }}>
-            {otherProfile?.displayName ?? 'Loading…'}
-          </Text>
+        <View style={{ borderWidth: 2, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 22, padding: 1 }}>
+          <Avatar url={otherProfile?.photoURL ?? ''} name={otherProfile?.displayName ?? '?'} size={36} />
         </View>
-        <Pressable onPress={() => router.push(`/profile/${otherUid}` as never)}>
-          <Text style={{ color: T.yellow, fontSize: 12 }}>View Profile</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: T.text0, fontWeight: '800', fontSize: 16, letterSpacing: -0.2 }}>
+            {otherProfile?.displayName ?? 'Messages'}
+          </Text>
+          {otherProfile ? (
+            <Text style={{ color: T.text3, fontSize: 11, marginTop: 2 }}>Direct message</Text>
+          ) : null}
+        </View>
+        <Pressable
+          onPress={() => {
+            const uid = resolvedOtherUid ?? otherUid;
+            if (uid) router.push(`/profile/${uid}` as never);
+          }}
+          disabled={!(resolvedOtherUid ?? otherUid)}
+          style={{ paddingVertical: 8, paddingHorizontal: 4 }}
+        >
+          <Text style={{ color: T.yellow, fontSize: 13, fontWeight: '700' }}>Profile</Text>
         </Pressable>
       </View>
 
@@ -176,7 +208,8 @@ export function ChatWindowScreen({ conversationId, otherUid }: Props) {
         data={messages}
         keyExtractor={(m) => m.id}
         renderItem={renderMsg}
-        contentContainerStyle={{ paddingTop: 12, paddingBottom: 8 }}
+        style={{ flex: 1, backgroundColor: T.bg0 }}
+        contentContainerStyle={{ paddingTop: 16, paddingBottom: 12, flexGrow: 1 }}
         onContentSizeChange={() => flatRef.current?.scrollToEnd({ animated: false })}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', justifyContent: 'center', padding: 40 }}>
@@ -186,11 +219,12 @@ export function ChatWindowScreen({ conversationId, otherUid }: Props) {
         }
       />
 
-      {/* Input */}
+      {/* Input — pill composer */}
       <View style={{
-        flexDirection: 'row', alignItems: 'center', gap: 10,
-        padding: 10, borderTopWidth: 1, borderTopColor: T.border,
-        backgroundColor: T.bg1,
+        flexDirection: 'row', alignItems: 'flex-end', gap: 10,
+        paddingHorizontal: 12, paddingVertical: 10, paddingBottom: 10 + insets.bottom,
+        borderTopWidth: 1, borderTopColor: T.border,
+        backgroundColor: T.bg0,
       }}>
         <TextInput
           value={text}
@@ -199,10 +233,10 @@ export function ChatWindowScreen({ conversationId, otherUid }: Props) {
           placeholderTextColor={T.text3}
           multiline
           style={{
-            flex: 1, backgroundColor: T.bg2, borderRadius: 20,
-            paddingHorizontal: 16, paddingVertical: 10,
-            color: T.text0, fontSize: 14, maxHeight: 120,
-            borderWidth: 1, borderColor: T.border,
+            flex: 1, backgroundColor: T.bg1, borderRadius: 24,
+            paddingHorizontal: 18, paddingVertical: 12,
+            color: T.text0, fontSize: 15, maxHeight: 120,
+            borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
           }}
           onSubmitEditing={Platform.OS === 'web' ? handleSend : undefined}
         />
@@ -210,12 +244,13 @@ export function ChatWindowScreen({ conversationId, otherUid }: Props) {
           onPress={handleSend}
           disabled={!text.trim() || sending}
           style={{
-            width: 40, height: 40, borderRadius: 20,
+            width: 44, height: 44, borderRadius: 22,
             backgroundColor: text.trim() ? T.yellow : T.bg3,
             alignItems: 'center', justifyContent: 'center',
+            marginBottom: 2,
           }}
         >
-          <Text style={{ color: text.trim() ? '#000' : T.text3, fontSize: 18 }}>➤</Text>
+          <Text style={{ color: text.trim() ? '#000' : T.text3, fontSize: 20 }}>➤</Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>

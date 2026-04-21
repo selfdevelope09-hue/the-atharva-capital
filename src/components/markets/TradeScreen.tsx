@@ -1,17 +1,18 @@
 import type { AppMarket } from '@/constants/appMarkets';
-import { SafeNativeAd } from '@/components/ads/SafeNativeAd';
 import { useLedgerStore } from '@/store/ledgerStore';
 import { useMultiMarketBalanceStore } from '@/store/multiMarketBalanceStore';
 import { useAdUxStore } from '@/store/adUxStore';
 import { useRouter, type Href } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Dimensions, Pressable, ScrollView, Text, View } from 'react-native';
+import { Dimensions, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MarketConfig, toYahooFullSymbol, tvSymbolFor } from '../../constants/markets';
 import { fmtMoney, fmtPct, T } from '../../constants/theme';
 import { useMarketPrices, useMarketSubscribe } from '../../contexts/MarketPriceContext';
 import { BottomSheet } from '../shared/BottomSheet';
 import { ChartWithOverlay, TpSl, ChartPosition } from '../shared/ChartWithOverlay';
-import { OrderForm, OrderFormValue } from '../shared/OrderForm';
+import { RegionalOrderForm } from '@/src/components/trading/RegionalOrderForm';
+import { OrderFormValue } from '../shared/OrderForm';
 import { ToastContainer, useToast } from '../ui/Toast';
 
 export interface TradeScreenProps {
@@ -25,6 +26,7 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [screenW, setScreenW] = useState(Dimensions.get('window').width);
+  const [screenH, setScreenH] = useState(Dimensions.get('window').height);
   const mkt = market.id as AppMarket;
   const balanceZ = useMultiMarketBalanceStore((s) => s.balances[mkt] ?? 0);
   const hydrateBalances = useMultiMarketBalanceStore((s) => s.hydrateFromCloud);
@@ -33,9 +35,13 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
   const balance = balanceProp ?? balanceZ;
 
   const { toasts, show: showToast } = useToast();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
-    const sub = Dimensions.addEventListener('change', ({ window }) => setScreenW(window.width));
+    const sub = Dimensions.addEventListener('change', ({ window }) => {
+      setScreenW(window.width);
+      setScreenH(window.height);
+    });
     return () => sub.remove();
   }, []);
 
@@ -175,7 +181,11 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
         setOrder((prev) => ({ ...prev, sl: p }));
       }}
       timezone={market.timezone ?? 'Etc/UTC'}
-      height={isDesktop ? 600 : 420}
+      height={
+        isDesktop
+          ? Math.min(720, Math.max(480, screenH * 0.52))
+          : Math.min(440, Math.max(300, screenH * 0.36))
+      }
       /* Pre-trade props */
       preTradeMode={preTradeMode}
       preTradeSide={order.side}
@@ -194,7 +204,9 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
   );
 
   const orderPanel = (
-    <OrderForm
+    <RegionalOrderForm
+      ticker={ticker}
+      hideRewardVideo
       market={market}
       lastPrice={lastPrice}
       balance={balance}
@@ -254,33 +266,92 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
       </View>
 
       {isDesktop ? (
-        <View style={{ flex: 1, flexDirection: 'row' }}>
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }} style={{ flex: 1 }}>
-            {chart}
-            <SafeNativeAd slotId={1} />
-            <PairPicker market={market} activeTicker={ticker} />
-            <SafeNativeAd slotId={2} />
-          </ScrollView>
-          <View style={{ width: 380, borderLeftWidth: 1, borderColor: T.border, backgroundColor: T.bg0 }}>
-            <ScrollView contentContainerStyle={{ padding: 16 }}>{orderPanel}</ScrollView>
+        <View style={{ flex: 1, flexDirection: 'row', minHeight: 0 }}>
+          <View style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+            <View style={{ flex: 1, minHeight: 0, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
+              {chart}
+            </View>
+            <View
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 10,
+                borderTopWidth: 1,
+                borderBottomWidth: 1,
+                borderColor: T.border,
+                backgroundColor: T.bg1,
+              }}
+            >
+              <Text style={{ color: T.text3, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 8 }}>
+                SYMBOLS
+              </Text>
+              <PairPicker market={market} activeTicker={ticker} />
+            </View>
+          </View>
+          <View
+            style={{
+              width: 380,
+              minWidth: 320,
+              alignSelf: 'stretch',
+              borderLeftWidth: 1,
+              borderColor: T.border,
+              backgroundColor: T.bg0,
+              minHeight: 0,
+              flexDirection: 'column',
+            }}
+          >
+            <View style={{ flex: 1, minHeight: 0 }}>
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ padding: 16, paddingBottom: 12 }}
+                keyboardShouldPersistTaps="handled"
+              >
+                {orderPanel}
+              </ScrollView>
+            </View>
           </View>
         </View>
       ) : (
-        <>
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
+        <View style={{ flex: 1, minHeight: 0 }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{
+              paddingHorizontal: 16,
+              paddingTop: 12,
+              paddingBottom: 96,
+              gap: 14,
+            }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             {chart}
-            <SafeNativeAd slotId={1} />
-            <PairPicker market={market} activeTicker={ticker} />
-            <SafeNativeAd slotId={2} />
+            <View
+              style={{
+                paddingVertical: 10,
+                borderTopWidth: 1,
+                borderBottomWidth: 1,
+                borderColor: T.border,
+                backgroundColor: T.bg1,
+                marginHorizontal: -4,
+                paddingHorizontal: 12,
+                borderRadius: T.radiusMd,
+              }}
+            >
+              <Text style={{ color: T.text3, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 8 }}>
+                SYMBOLS
+              </Text>
+              <PairPicker market={market} activeTicker={ticker} />
+            </View>
           </ScrollView>
           <Pressable
             onPress={() => setSheetOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Open order panel"
             style={{
               position: 'absolute',
               right: 16,
-              bottom: 24,
-              paddingHorizontal: 18,
-              paddingVertical: 14,
+              bottom: 16 + insets.bottom,
+              paddingHorizontal: 20,
+              paddingVertical: 15,
               borderRadius: 999,
               backgroundColor: preTradeMode ? T.yellow : (market.accentColor ?? T.yellow),
               ...T.shadow,
@@ -290,10 +361,23 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
               {preTradeMode ? '📍 Chart Mode' : 'Trade ↗'}
             </Text>
           </Pressable>
-          <BottomSheet visible={sheetOpen} onClose={() => setSheetOpen(false)} heightPct={0.88}>
-            <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 48 }}>{orderPanel}</ScrollView>
+          <BottomSheet visible={sheetOpen} onClose={() => setSheetOpen(false)} heightPct={0.92}>
+            <KeyboardAvoidingView
+              style={{ flex: 1 }}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+            >
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 24 + insets.bottom }}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+              >
+                {orderPanel}
+              </ScrollView>
+            </KeyboardAvoidingView>
           </BottomSheet>
-        </>
+        </View>
       )}
 
       {/* Toast notifications */}

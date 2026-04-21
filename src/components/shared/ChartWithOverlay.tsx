@@ -1,14 +1,15 @@
 /**
- * Chart + TP/SL overlay — web uses HTML Canvas + requestAnimationFrame.
- * Native uses View-based overlay with PanResponder handles.
+ * Chart + TP/SL overlay — TradingView Advanced Chart (`embed-widget-advanced-chart.js`)
+ * under a canvas overlay. Native uses the same embed inside WebView + PanResponder overlay.
  *
  * Extended with:
  *  - Pre-trade mode: draggable entry / TP / SL lines before confirming a trade
  *  - Open-position lines: entry, live P&L badge, TP/SL targets for active positions
  */
 
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   PanResponder,
   Platform,
   Pressable,
@@ -28,6 +29,11 @@ import {
   type PriceBand,
   yToPrice,
 } from './chartOverlayMath';
+import {
+  buildAdvancedChartWidgetConfig,
+  buildTradingViewAdvancedChartHtmlPage,
+  mountTradingViewAdvancedChartWeb,
+} from '@/src/utils/chart/tradingViewAdvancedChart';
 
 /* ─── Public types ─────────────────────────────────────────────────────────── */
 
@@ -112,31 +118,6 @@ export type ChartOverlayPriceRef = {
 
 /* ─── Helpers ───────────────────────────────────────────────────────────────── */
 
-function buildWidgetUrl(args: {
-  symbol: string;
-  interval: string;
-  theme: 'dark' | 'light';
-  locale: string;
-  timezone: string;
-}): string {
-  const p = [
-    `symbol=${encodeURIComponent(args.symbol)}`,
-    `interval=${encodeURIComponent(args.interval)}`,
-    `theme=${args.theme}`,
-    `style=1`,
-    `locale=${encodeURIComponent(args.locale)}`,
-    `timezone=${encodeURIComponent(args.timezone)}`,
-    `toolbar_bg=%230a0a0a`,
-    `hide_side_toolbar=0`,
-    `hide_top_toolbar=0`,
-    `withdateranges=1`,
-    `allow_symbol_change=0`,
-    `save_image=0`,
-    `studies=%5B%22RSI%40tv-basicstudies%22%2C%22MACD%40tv-basicstudies%22%5D`,
-  ].join('&');
-  return `https://s.tradingview.com/widgetembed/?${p}`;
-}
-
 function fmtPrice(n: number): string {
   if (!Number.isFinite(n)) return '—';
   const a = Math.abs(n);
@@ -186,9 +167,22 @@ export function ChartWithOverlay(props: ChartWithOverlayProps) {
     openPositions,
   } = props;
 
-  const url = useMemo(
-    () => buildWidgetUrl({ symbol: tvSymbol, interval, theme, locale, timezone }),
-    [tvSymbol, interval, theme, locale, timezone]
+  const embedConfig = useMemo(
+    () =>
+      buildAdvancedChartWidgetConfig({
+        symbol: tvSymbol,
+        interval,
+        theme,
+        locale,
+        timezone,
+        allowSymbolChange: false,
+      }),
+    [tvSymbol, interval, theme, locale, timezone],
+  );
+
+  const nativeChartHtml = useMemo(
+    () => buildTradingViewAdvancedChartHtmlPage(embedConfig),
+    [embedConfig],
   );
 
   const tp = tpsl.tp ?? tpsl.entry;
@@ -270,7 +264,7 @@ export function ChartWithOverlay(props: ChartWithOverlayProps) {
     >
       {Platform.OS === 'web' ? (
         <WebChartBlock
-          url={url}
+          embedConfig={embedConfig}
           height={height}
           priceRef={priceRef}
           top={top}
@@ -288,7 +282,7 @@ export function ChartWithOverlay(props: ChartWithOverlayProps) {
         />
       ) : (
         <View style={{ flex: 1 }}>
-          <NativeWebBlock url={url} frameBg={frameBg} />
+          <NativeWebBlock html={nativeChartHtml} frameBg={frameBg} />
           <NativeTpSlOverlay
             entry={tpsl.entry}
             takeProfit={tp}
@@ -343,7 +337,7 @@ export function ChartWithOverlay(props: ChartWithOverlayProps) {
 type BtnRect = { x: number; y: number; w: number; h: number };
 
 type WebChartBlockProps = {
-  url: string;
+  embedConfig: Record<string, unknown>;
   height: number;
   priceRef: React.MutableRefObject<ChartOverlayPriceRef>;
   top: number;
@@ -363,7 +357,7 @@ type WebChartBlockProps = {
 type DragTarget = 'tp' | 'sl' | 'preEntry' | 'preTP' | 'preSL' | null;
 
 function WebChartBlock({
-  url,
+  embedConfig,
   height,
   priceRef,
   top,
@@ -380,6 +374,8 @@ function WebChartBlock({
   cbDiscard,
 }: WebChartBlockProps) {
   const hostRef = useRef<View | null>(null);
+  const [layout, setLayout] = useState({ w: 0, h: 0 });
+  const [iframeLoading, setIframeLoading] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sizeRef = useRef({ w: 400, h: height });
   const dragRef = useRef<DragTarget>(null);
@@ -752,6 +748,12 @@ function WebChartBlock({
 
   scheduleDrawRef.current = scheduleDraw;
 
+  const embedKey = useMemo(() => JSON.stringify(embedConfig), [embedConfig]);
+
+  useEffect(() => {
+    setIframeLoading(true);
+  }, [embedKey]);
+
   useLayoutEffect(() => {
     priceRef.current = { ...priceRef.current, top, bottom };
   }, [top, bottom, priceRef]);
@@ -760,21 +762,30 @@ function WebChartBlock({
     if (Platform.OS !== 'web') return undefined;
 
     const host = hostRef.current as unknown as HTMLDivElement | null;
-    if (!host) return undefined;
+    if (!host || layout.w < 8) return undefined;
 
     let cancelled = false;
     let rafLoop = 0;
+    let loadFallback: ReturnType<typeof setTimeout> | undefined;
 
     host.innerHTML = '';
-    const iframe = document.createElement('iframe');
-    iframe.src = url;
-    iframe.style.width = '100%';
-    iframe.style.height = '100%';
-    iframe.style.border = '0';
-    iframe.style.background = T.bg0;
-    iframe.setAttribute('allowfullscreen', 'true');
-    iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture');
-    host.appendChild(iframe);
+    setIframeLoading(true);
+
+    const chartMount = document.createElement('div');
+    chartMount.style.cssText =
+      'position:absolute;left:0;top:0;width:100%;height:100%;z-index:0';
+    host.appendChild(chartMount);
+
+    const destroyTv = mountTradingViewAdvancedChartWeb(
+      chartMount,
+      embedConfig,
+      () => {
+        if (!cancelled) setIframeLoading(false);
+      },
+    );
+    loadFallback = setTimeout(() => {
+      if (!cancelled) setIframeLoading(false);
+    }, 15000);
 
     const canvas = document.createElement('canvas');
     canvas.style.position = 'absolute';
@@ -784,6 +795,7 @@ function WebChartBlock({
     canvas.style.height = '100%';
     canvas.style.pointerEvents = 'auto';
     canvas.style.touchAction = 'none';
+    canvas.style.zIndex = '2';
     host.style.position = 'relative';
     host.appendChild(canvas);
     canvasRef.current = canvas;
@@ -920,6 +932,7 @@ function WebChartBlock({
 
     return () => {
       cancelled = true;
+      if (loadFallback) clearTimeout(loadFallback);
       cancelAnimationFrame(rafLoop);
       ro.disconnect();
       canvas.removeEventListener('mousedown', onDown);
@@ -929,22 +942,54 @@ function WebChartBlock({
       window.removeEventListener('mouseup', onUp);
       window.removeEventListener('touchmove', onMoveWin);
       window.removeEventListener('touchend', onUp);
+      destroyTv();
       host.innerHTML = '';
       canvasRef.current = null;
     };
-  }, [url, onChangeTp, onChangeSl, priceRef]);
+  }, [embedConfig, embedKey, layout.w, layout.h, onChangeTp, onChangeSl, priceRef]);
 
-  return <View ref={hostRef} collapsable={false} style={{ flex: 1, minHeight: 320, backgroundColor: T.bg0 }} />;
+  return (
+    <View style={{ flex: 1, minHeight: 320, position: 'relative', backgroundColor: T.bg0 }}>
+      <View
+        ref={hostRef}
+        collapsable={false}
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          setLayout({ w: width, h: height });
+        }}
+        style={{ flex: 1, width: '100%', minHeight: 320 }}
+      />
+      {iframeLoading && layout.w > 0 ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 0,
+            zIndex: 40,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(11,14,17,0.85)',
+          }}
+        >
+          <ActivityIndicator size="large" color={T.yellow} />
+          <Text style={{ color: T.text2, marginTop: 12, fontSize: 13, fontWeight: '600' }}>Loading chart…</Text>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 /* ─── Native WebView block ──────────────────────────────────────────────────── */
 
-type NativeWebBlockProps = { url: string; frameBg: string };
+type NativeWebBlockProps = { html: string; frameBg: string };
 
-function NativeWebBlock({ url, frameBg }: NativeWebBlockProps) {
+function NativeWebBlock({ html, frameBg }: NativeWebBlockProps) {
   return (
     <WebView
-      source={{ uri: url }}
+      source={{ html, baseUrl: 'https://www.tradingview.com' }}
       style={{ flex: 1, backgroundColor: frameBg }}
       javaScriptEnabled
       domStorageEnabled

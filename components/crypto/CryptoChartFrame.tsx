@@ -3,6 +3,11 @@ import { Platform, Pressable, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 import { CRYPTO_THEME } from '@/components/crypto/cryptoTheme';
+import {
+  buildAdvancedChartWidgetConfig,
+  buildTradingViewAdvancedChartHtmlPage,
+  mountTradingViewAdvancedChartWeb,
+} from '@/src/utils/chart/tradingViewAdvancedChart';
 
 export type CryptoChartFrameProps = {
   symbol: string;
@@ -13,10 +18,7 @@ export type CryptoChartFrameProps = {
 };
 
 /**
- * TradingView lightweight widget-embed iframe (web) / WebView (native).
- *
- * Per spec URL template:
- *   https://s.tradingview.com/widgetembed/?symbol=BINANCE%3A{SYMBOL}&interval=15&theme=dark
+ * TradingView Advanced Chart (`embed-widget-advanced-chart.js`) — Binance spot pair.
  */
 export function CryptoChartFrame({
   symbol,
@@ -25,33 +27,136 @@ export function CryptoChartFrame({
   showFullscreen = false,
   onFullscreen,
 }: CryptoChartFrameProps) {
-  const src = useMemo(() => buildWidgetUrl(symbol, interval, theme), [
-    symbol,
-    interval,
-    theme,
-  ]);
+  const embedConfig = useMemo(
+    () =>
+      buildAdvancedChartWidgetConfig({
+        symbol: `BINANCE:${symbol.toUpperCase()}`,
+        interval,
+        theme,
+        locale: 'en',
+        timezone: 'Etc/UTC',
+        allowSymbolChange: false,
+      }),
+    [symbol, interval, theme],
+  );
+
+  const html = useMemo(
+    () => buildTradingViewAdvancedChartHtmlPage(embedConfig),
+    [embedConfig],
+  );
+
+  const embedKey = useMemo(() => JSON.stringify(embedConfig), [embedConfig]);
 
   if (Platform.OS === 'web') {
-    return <WebIframe src={src} showFullscreen={showFullscreen} onFullscreen={onFullscreen} />;
+    return (
+      <WebAdvancedChart
+        embedKey={embedKey}
+        embedConfig={embedConfig}
+        showFullscreen={showFullscreen}
+        onFullscreen={onFullscreen}
+      />
+    );
   }
-  return <NativeWebView src={src} showFullscreen={showFullscreen} onFullscreen={onFullscreen} />;
+  return (
+    <NativeWebView
+      html={html}
+      embedKey={embedKey}
+      showFullscreen={showFullscreen}
+      onFullscreen={onFullscreen}
+    />
+  );
 }
 
-function buildWidgetUrl(symbol: string, interval: string, theme: 'dark' | 'light'): string {
-  const s = encodeURIComponent(`BINANCE:${symbol.toUpperCase()}`);
-  const params = [
-    `symbol=${s}`,
-    `interval=${encodeURIComponent(interval)}`,
-    `theme=${theme}`,
-    `style=1`,
-    `timezone=Etc%2FUTC`,
-    `hide_side_toolbar=0`,
-    `hide_top_toolbar=0`,
-    `withdateranges=1`,
-    `save_image=0`,
-    `studies=%5B%22RSI%40tv-basicstudies%22%2C%22MACD%40tv-basicstudies%22%5D`,
-  ].join('&');
-  return `https://s.tradingview.com/widgetembed/?${params}`;
+function WebAdvancedChart({
+  embedKey,
+  embedConfig,
+  showFullscreen,
+  onFullscreen,
+}: {
+  embedKey: string;
+  embedConfig: Record<string, unknown>;
+  showFullscreen: boolean;
+  onFullscreen?: () => void;
+}) {
+  const hostRef = useRef<View | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return undefined;
+    const host = hostRef.current as unknown as HTMLElement | null;
+    if (!host) return undefined;
+
+    setReady(false);
+    host.innerHTML = '';
+    const root = document.createElement('div');
+    root.style.width = '100%';
+    root.style.height = '100%';
+    host.appendChild(root);
+
+    const destroy = mountTradingViewAdvancedChartWeb(root, embedConfig, () => setReady(true));
+    const t = setTimeout(() => setReady(true), 12000);
+
+    return () => {
+      clearTimeout(t);
+      destroy();
+      host.innerHTML = '';
+    };
+  }, [embedKey, embedConfig]);
+
+  return (
+    <View
+      style={{
+        flex: 1,
+        minHeight: 320,
+        width: '100%',
+        backgroundColor: CRYPTO_THEME.bg,
+        position: 'relative',
+      }}
+      collapsable={false}>
+      <View
+        ref={hostRef}
+        collapsable={false}
+        style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
+      />
+      {!ready ? <LoadingShim /> : null}
+      {showFullscreen ? <FullscreenButton onPress={onFullscreen} /> : null}
+    </View>
+  );
+}
+
+function NativeWebView({
+  html,
+  embedKey,
+  showFullscreen,
+  onFullscreen,
+}: {
+  html: string;
+  embedKey: string;
+  showFullscreen: boolean;
+  onFullscreen?: () => void;
+}) {
+  return (
+    <View
+      style={{ flex: 1, minHeight: 320, width: '100%', backgroundColor: CRYPTO_THEME.bg }}
+      collapsable={false}>
+      <WebView
+        key={embedKey}
+        source={{ html, baseUrl: 'https://www.tradingview.com' }}
+        javaScriptEnabled
+        domStorageEnabled
+        mixedContentMode="always"
+        allowsInlineMediaPlayback
+        originWhitelist={['*']}
+        style={{ flex: 1, backgroundColor: CRYPTO_THEME.bg }}
+        androidLayerType="hardware"
+        setSupportMultipleWindows={false}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+        overScrollMode="never"
+      />
+      {showFullscreen ? <FullscreenButton onPress={onFullscreen} /> : null}
+    </View>
+  );
 }
 
 function FullscreenButton({ onPress }: { onPress?: () => void }) {
@@ -75,99 +180,6 @@ function FullscreenButton({ onPress }: { onPress?: () => void }) {
       }}>
       <Text style={{ color: CRYPTO_THEME.text, fontSize: 11, fontWeight: '800' }}>⛶ Fullscreen</Text>
     </Pressable>
-  );
-}
-
-/* -------- Web ----------------------------------------------------------- */
-
-function WebIframe({
-  src,
-  showFullscreen,
-  onFullscreen,
-}: {
-  src: string;
-  showFullscreen: boolean;
-  onFullscreen?: () => void;
-}) {
-  const hostRef = useRef<View | null>(null);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    if (Platform.OS !== 'web') return;
-    const host = hostRef.current as unknown as HTMLElement | null;
-    if (!host) return;
-
-    host.innerHTML = '';
-    const iframe = document.createElement('iframe');
-    iframe.src = src;
-    iframe.style.width = '100%';
-    iframe.style.height = '100%';
-    iframe.style.border = '0';
-    iframe.style.background = CRYPTO_THEME.bg;
-    iframe.setAttribute('allowfullscreen', 'true');
-    iframe.setAttribute(
-      'allow',
-      'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture'
-    );
-    iframe.onload = () => setReady(true);
-    host.appendChild(iframe);
-
-    return () => {
-      host.innerHTML = '';
-    };
-  }, [src]);
-
-  return (
-    <View
-      style={{
-        flex: 1,
-        minHeight: 320,
-        width: '100%',
-        backgroundColor: CRYPTO_THEME.bg,
-        position: 'relative',
-      }}
-      collapsable={false}>
-      <View
-        ref={hostRef}
-        collapsable={false}
-        style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
-      />
-      {!ready ? <LoadingShim /> : null}
-      {showFullscreen ? <FullscreenButton onPress={onFullscreen} /> : null}
-    </View>
-  );
-}
-
-/* -------- Native -------------------------------------------------------- */
-
-function NativeWebView({
-  src,
-  showFullscreen,
-  onFullscreen,
-}: {
-  src: string;
-  showFullscreen: boolean;
-  onFullscreen?: () => void;
-}) {
-  return (
-    <View
-      style={{ flex: 1, minHeight: 320, width: '100%', backgroundColor: CRYPTO_THEME.bg }}
-      collapsable={false}>
-      <WebView
-        source={{ uri: src }}
-        javaScriptEnabled
-        domStorageEnabled
-        allowsInlineMediaPlayback
-        originWhitelist={['*']}
-        style={{ flex: 1, backgroundColor: CRYPTO_THEME.bg }}
-        androidLayerType="hardware"
-        setSupportMultipleWindows={false}
-        showsHorizontalScrollIndicator={false}
-        showsVerticalScrollIndicator={false}
-        overScrollMode="never"
-      />
-      {showFullscreen ? <FullscreenButton onPress={onFullscreen} /> : null}
-    </View>
   );
 }
 

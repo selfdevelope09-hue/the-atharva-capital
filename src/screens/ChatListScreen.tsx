@@ -3,7 +3,7 @@
  */
 
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FlatList, Image, Pressable, Text, TextInput, View } from 'react-native';
 
 import { auth } from '@/config/firebaseConfig';
@@ -13,6 +13,7 @@ import {
 } from '@/services/firebase/chatRepository';
 import { getProfile } from '@/services/firebase/userProfileRepository';
 import { T } from '@/src/constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface ConvRow extends Conversation {
   otherName: string;
@@ -63,6 +64,7 @@ function timeAgo(iso: string): string {
 }
 
 export function ChatListScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const myUid = auth?.currentUser?.uid ?? '';
   const [convs, setConvs] = useState<ConvRow[]>([]);
@@ -103,17 +105,31 @@ export function ChatListScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg0 }}>
-      {/* Header */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: T.border }}>
-        <Text style={{ color: T.text0, fontSize: 20, fontWeight: '800', marginBottom: 12 }}>Messages</Text>
+      {/* Header — DM-style */}
+      <View style={{
+        paddingHorizontal: 16,
+        paddingTop: 12 + insets.top,
+        paddingBottom: 14,
+        borderBottomWidth: 1,
+        borderBottomColor: T.border,
+        backgroundColor: T.bg0,
+      }}>
+        <Text style={{ color: T.text0, fontSize: 26, fontWeight: '800', letterSpacing: -0.5, marginBottom: 4 }}>Messages</Text>
+        <Text style={{ color: T.text3, fontSize: 13, marginBottom: 14 }}>Your conversations</Text>
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Search conversations…"
+          placeholder="Search"
           placeholderTextColor={T.text3}
           style={{
-            backgroundColor: T.bg2, borderRadius: T.radiusMd, paddingHorizontal: 14, paddingVertical: 10,
-            color: T.text0, fontSize: 14, borderWidth: 1, borderColor: T.border,
+            backgroundColor: T.bg1,
+            borderRadius: 22,
+            paddingHorizontal: 18,
+            paddingVertical: 12,
+            color: T.text0,
+            fontSize: 15,
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.08)',
           }}
         />
       </View>
@@ -134,20 +150,29 @@ export function ChatListScreen() {
           keyExtractor={(c) => c.id}
           renderItem={({ item }) => (
             <Pressable
-              onPress={() => router.push(`/chats/${item.id}` as never)}
+              onPress={() => {
+                const oid = item.participants.find((p) => p !== myUid) ?? '';
+                if (oid) {
+                  router.push(`/chats/${item.id}?otherUid=${encodeURIComponent(oid)}` as never);
+                } else {
+                  router.push(`/chats/${item.id}` as never);
+                }
+              }}
               style={({ pressed }) => ({
                 flexDirection: 'row',
                 alignItems: 'center',
                 paddingHorizontal: 16,
-                paddingVertical: 12,
-                gap: 12,
-                backgroundColor: pressed ? T.bg2 : 'transparent',
+                paddingVertical: 14,
+                gap: 14,
+                backgroundColor: pressed ? T.bg1 : 'transparent',
                 borderBottomWidth: 1,
                 borderBottomColor: T.bg2,
               })}
             >
               <View>
-                <Avatar url={item.otherPhoto} name={item.otherName} />
+                <View style={{ borderWidth: 2, borderColor: 'rgba(255,255,255,0.1)', borderRadius: 24, padding: 1 }}>
+                  <Avatar url={item.otherPhoto} name={item.otherName} size={48} />
+                </View>
                 {item.unreadForMe > 0 && (
                   <View style={{
                     position: 'absolute', top: 0, right: 0,

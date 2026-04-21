@@ -1,3 +1,4 @@
+import { useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import { View, Text } from 'react-native';
 import { auth } from '@/config/firebaseConfig';
@@ -6,6 +7,8 @@ import { ProfileScreen } from '@/src/screens/ProfileScreen';
 import { T } from '@/src/constants/theme';
 
 export default function ProfileTab() {
+  const { edit } = useLocalSearchParams<{ edit?: string }>();
+  const initialEdit = edit === '1' || edit === 'true';
   const uid = auth?.currentUser?.uid;
   if (!uid) {
     return (
@@ -16,7 +19,7 @@ export default function ProfileTab() {
   }
   return (
     <ScreenErrorBoundary>
-      <ProfileScreen userId={uid} />
+      <ProfileScreen userId={uid} initialEdit={initialEdit} />
     </ScreenErrorBoundary>
   );
 }

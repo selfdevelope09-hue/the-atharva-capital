@@ -34,6 +34,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { PriceProvider } from '@/contexts/PriceContext';
 import { UnifiedMarketsPriceProvider } from '@/contexts/UnifiedMarketsPriceContext';
 import { isFirebaseConfigured } from '@/config/firebaseConfig';
+import { FirestoreProvider } from '@/src/contexts/FirestoreContext';
 import { bootFirebaseAuthAndProfile } from '@/services/firebase/bootAuth';
 import { useAppLaunchStore } from '@/store/appLaunchStore';
 import { useProfileStore } from '@/store/profileStore';
@@ -163,6 +164,7 @@ export default function RootLayout() {
   return (
     <AppRootErrorBoundary>
       <SafeAreaProvider>
+        <FirestoreProvider>
         <UnifiedMarketsPriceProvider>
           <PriceProvider>
             {/* Null-rendering side-effect components that use provider hooks */}
@@ -180,6 +182,7 @@ export default function RootLayout() {
             )}
           </PriceProvider>
         </UnifiedMarketsPriceProvider>
+        </FirestoreProvider>
       </SafeAreaProvider>
     </AppRootErrorBoundary>
   );

@@ -1,6 +1,7 @@
 import React from 'react';
+
 import MarketScreenTemplate from './MarketScreenTemplate';
 
 export default function CanadaMarketScreen() {
-  return <MarketScreenTemplate marketId="canada" />;
+  return <MarketScreenTemplate marketId="canada" title="Canada Market" />;
 }

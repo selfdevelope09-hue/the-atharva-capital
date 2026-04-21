@@ -58,3 +58,5 @@ Desktop.ini
 
 # Misc
 *.pem
+
+.vercel

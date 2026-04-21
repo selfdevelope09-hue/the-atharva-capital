@@ -63,7 +63,7 @@ export function BottomSheet({ visible, onClose, heightPct = 0.8, children }: Bot
           <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: T.border }} />
           </View>
-          {children}
+          <View style={{ flex: 1, minHeight: 0 }}>{children}</View>
         </View>
       </Animated.View>
     </Modal>

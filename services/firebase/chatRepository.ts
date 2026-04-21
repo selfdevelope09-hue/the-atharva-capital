@@ -80,21 +80,41 @@ export async function getOrCreateConversation(otherUid: string): Promise<string>
   return ref.id;
 }
 
+/** Resolve the other participant in a DM (requires sign-in). */
+export async function getOtherParticipantUid(conversationId: string): Promise<string | null> {
+  if (!isFirebaseConfigured || !db) return null;
+  const myUid = auth?.currentUser?.uid;
+  if (!myUid) return null;
+  try {
+    const snap = await getDoc(doc(db, 'conversations', conversationId));
+    const parts = (snap.data()?.['participants'] as string[]) ?? [];
+    return parts.find((p) => p !== myUid) ?? null;
+  } catch (e) {
+    console.warn('[chat] getOtherParticipantUid', e);
+    return null;
+  }
+}
+
 /** Subscribe to user's conversation list (real-time). */
 export function subscribeConversations(
   uid: string,
   cb: (convs: Conversation[]) => void
 ): () => void {
   if (!isFirebaseConfigured || !db) { cb([]); return () => {}; }
+  // No orderBy: avoids a Firestore composite index on participants + lastMessageAt.
   const q = query(
     collection(db, 'conversations'),
     where('participants', 'array-contains', uid),
-    orderBy('lastMessageAt', 'desc'),
-    limit(50)
+    limit(100)
   );
   return onSnapshot(q, (snap) => {
-    cb(snap.docs.map((d) => buildConversation(d.id, d.data() as Record<string, unknown>)));
-  }, () => cb([]));
+    const list = snap.docs.map((d) => buildConversation(d.id, d.data() as Record<string, unknown>));
+    list.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+    cb(list.slice(0, 50));
+  }, (err) => {
+    console.warn('[chat] subscribeConversations', err);
+    cb([]);
+  });
 }
 
 /** Subscribe to messages inside a conversation. */
@@ -110,7 +130,10 @@ export function subscribeMessages(
   );
   return onSnapshot(q, (snap) => {
     cb(snap.docs.map((d) => buildMessage(d.id, d.data() as Record<string, unknown>)));
-  }, () => cb([]));
+  }, (err) => {
+    console.warn('[chat] subscribeMessages', err);
+    cb([]);
+  });
 }
 
 /** Send a message. */
