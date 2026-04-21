@@ -11,15 +11,28 @@
  * Fix: set window.process explicitly so all modules share it via window.
  */
 
-if (typeof window !== 'undefined' && typeof process === 'undefined') {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window as any).process = {
-    env: { NODE_ENV: 'production' },
-    browser: true,
-    version: '',
-    versions: {},
-    nextTick: (fn: (...args: unknown[]) => void, ...args: unknown[]) => setTimeout(() => fn(...args), 0),
-  };
+if (typeof window !== 'undefined') {
+  const w = window as Record<string, unknown>;
+
+  // Metro's runtime bundle declares `var process` as a classic-script global;
+  // after our import.meta patch converts bundles to type="module" that var stays
+  // module-scoped and is invisible to other modules. Expose it via window.
+  if (typeof process === 'undefined') {
+    w.process = {
+      env: { NODE_ENV: 'production' },
+      browser: true,
+      version: '',
+      versions: {},
+      nextTick: (fn: (...args: unknown[]) => void, ...args: unknown[]) =>
+        setTimeout(() => fn(...args), 0),
+    };
+  }
+
+  // Metro emits `__METRO_GLOBAL_PREFIX__` as a bundle-scoped var; same scoping
+  // issue as process above. Define on window so every module can read it.
+  if (typeof (w.__METRO_GLOBAL_PREFIX__) === 'undefined') {
+    w.__METRO_GLOBAL_PREFIX__ = '';
+  }
 }
 
 export {};

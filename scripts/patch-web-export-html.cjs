@@ -1,16 +1,16 @@
 /**
- * Two-pass HTML patcher for Expo static web exports:
+ * Three-pass HTML patcher for Expo static web exports:
  *
  *  Pass 1 — import.meta fix
  *    Expo Metro emits bundle scripts as <script src="/_expo/..." defer> without type="module".
  *    Bundles contain import.meta which only works inside ES module scripts.
  *
- *  Pass 2 — process polyfill
+ *  Pass 2 — globals polyfill  (process + __METRO_GLOBAL_PREFIX__)
  *    After converting bundles to type="module" each script runs in its own scope.
- *    The __expo-metro-runtime bundle used to declare `var process` as a classic script,
- *    leaking it to window. As a module script that var stays local.
- *    Fix: inject an inline classic <script> (which runs BEFORE all module scripts)
- *    that sets window.process explicitly.
+ *    Vars that Metro declared as classic-script globals (process, __METRO_GLOBAL_PREFIX__)
+ *    become module-scoped and invisible to other modules.
+ *    Fix: inject an inline classic <script> BEFORE the first module script.
+ *    Classic scripts run first and write to window, which all modules can read.
  *
  * Run: node scripts/patch-web-export-html.cjs
  */
@@ -38,10 +38,12 @@ function collectHtml(dir, results = []) {
   return results;
 }
 
-// Minified window.process polyfill (classic script — runs before ALL module scripts)
+// Minified globals polyfill — classic script, runs BEFORE all type="module" scripts.
+// Covers: window.process  +  window.__METRO_GLOBAL_PREFIX__
 const PROCESS_POLYFILL_SCRIPT =
   '<script>' +
   '(function(){' +
+  // process polyfill
   'if(typeof window!=="undefined"&&typeof window.process==="undefined"){' +
   'window.process={' +
   'env:{NODE_ENV:"production"},' +
@@ -50,6 +52,14 @@ const PROCESS_POLYFILL_SCRIPT =
   'versions:{},' +
   'nextTick:function(fn){return setTimeout(fn,0);}' +
   '};' +
+  '}' +
+  // __METRO_GLOBAL_PREFIX__ polyfill
+  'if(typeof window.__METRO_GLOBAL_PREFIX__==="undefined"){' +
+  'window.__METRO_GLOBAL_PREFIX__="";' +
+  '}' +
+  // also define on globalThis so Metro's internal require() finds it
+  'if(typeof globalThis.__METRO_GLOBAL_PREFIX__==="undefined"){' +
+  'globalThis.__METRO_GLOBAL_PREFIX__="";' +
   '}' +
   '})();' +
   '</script>';
@@ -70,9 +80,9 @@ for (const file of htmlFiles) {
     return `<script type="module" src="${src}"></script>`;
   });
 
-  // Pass 2: inject window.process polyfill before the first _expo module script
-  // (classic scripts run before deferred / module scripts — polyfill is ready first)
-  if (!html.includes('window.process=')) {
+  // Pass 2: inject globals polyfill before the first _expo module script.
+  // Guard on __METRO_GLOBAL_PREFIX__ so re-running the script is idempotent.
+  if (!html.includes('__METRO_GLOBAL_PREFIX__')) {
     html = html.replace(
       /<script type="module" src="\/_expo\/static\/js\/web\//,
       PROCESS_POLYFILL_SCRIPT + '<script type="module" src="/_expo/static/js/web/',
@@ -84,7 +94,7 @@ for (const file of htmlFiles) {
     patchedCount++;
     console.log(`[patch] patched: ${path.relative(distDir, file)}`);
   } else {
-    if (html.includes('window.process=')) {
+    if (html.includes('__METRO_GLOBAL_PREFIX__')) {
       console.log(`[patch] already patched: ${path.relative(distDir, file)}`);
     } else {
       console.warn(`[patch] no matching bundle scripts in: ${path.relative(distDir, file)}`);
