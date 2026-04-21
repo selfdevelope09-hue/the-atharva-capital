@@ -3,16 +3,14 @@
  */
 
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { memo, useCallback, useEffect, useState, type ComponentProps } from 'react';
+import { Image, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePathname, useRouter } from 'expo-router';
 
 import { FontSans } from '@/constants/theme';
 import { useThemeStore } from '@/store/themeStore';
 import { auth } from '@/config/firebaseConfig';
-import { subscribeTotalUnread } from '@/services/firebase/chatRepository';
-import { subscribeNotifications } from '@/services/firebase/notificationRepository';
 import { T } from '@/src/constants/theme';
 
 type NavHref = string;
@@ -49,10 +47,15 @@ function Badge({ count, color = T.red }: { count: number; color?: string }) {
 
 function Avatar({ url, name, size = 32 }: { url: string; name: string; size?: number }) {
   const initials = name ? name[0].toUpperCase() : '?';
-  if (url) {
+  const [err, setErr] = useState(false);
+
+  if (url && !err) {
     return (
-      // @ts-ignore
-      <img src={url} style={{ width: size, height: size, borderRadius: size / 2, objectFit: 'cover', border: `2px solid ${T.border}` }} alt={name} />
+      <Image
+        source={{ uri: url }}
+        style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: T.border }}
+        onError={() => setErr(true)}
+      />
     );
   }
   return (
@@ -78,11 +81,24 @@ function DesktopSideNavInner() {
 
   useEffect(() => {
     if (!myUid) return;
-    const unsub1 = subscribeTotalUnread(myUid, setUnreadChat);
-    const unsub2 = subscribeNotifications(myUid, (notifs) => {
-      setUnreadNotif(notifs.filter((n) => !n.read).length);
-    });
-    return () => { unsub1(); unsub2(); };
+    let unsub1: (() => void) | null = null;
+    let unsub2: (() => void) | null = null;
+
+    const init = async () => {
+      try {
+        const { subscribeTotalUnread } = await import('@/services/firebase/chatRepository');
+        const { subscribeNotifications } = await import('@/services/firebase/notificationRepository');
+        unsub1 = subscribeTotalUnread(myUid, setUnreadChat);
+        unsub2 = subscribeNotifications(myUid, (ns) => {
+          setUnreadNotif(ns.filter((n) => !n.read).length);
+        });
+      } catch {
+        // Firebase not available
+      }
+    };
+
+    void init();
+    return () => { unsub1?.(); unsub2?.(); };
   }, [myUid]);
 
   const go = useCallback((href: string) => {

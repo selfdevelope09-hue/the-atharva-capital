@@ -3,8 +3,8 @@
  */
 
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { FlatList, Image, Pressable, Text, TextInput, View } from 'react-native';
 
 import { auth } from '@/config/firebaseConfig';
 import {
@@ -22,13 +22,14 @@ interface ConvRow extends Conversation {
 
 function Avatar({ url, name, size = 44 }: { url: string; name: string; size?: number }) {
   const initials = name ? name[0].toUpperCase() : '?';
-  if (url) {
+  const [err, setErr] = React.useState(false);
+
+  if (url && !err) {
     return (
-      // @ts-ignore
-      <img
-        src={url}
-        style={{ width: size, height: size, borderRadius: size / 2, objectFit: 'cover' }}
-        alt={name}
+      <Image
+        source={{ uri: url }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+        onError={() => setErr(true)}
       />
     );
   }

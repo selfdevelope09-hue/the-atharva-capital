@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -31,10 +32,15 @@ interface Props {
 
 function Avatar({ url, name, size = 36 }: { url: string; name: string; size?: number }) {
   const initials = name ? name[0].toUpperCase() : '?';
-  if (url) {
+  const [err, setErr] = React.useState(false);
+
+  if (url && !err) {
     return (
-      // @ts-ignore
-      <img src={url} style={{ width: size, height: size, borderRadius: size / 2, objectFit: 'cover' }} alt={name} />
+      <Image
+        source={{ uri: url }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+        onError={() => setErr(true)}
+      />
     );
   }
   return (

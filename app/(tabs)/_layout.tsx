@@ -4,10 +4,6 @@ import { useCallback, useEffect, useMemo, useState, type ComponentProps } from '
 import { Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 
-import { auth } from '@/config/firebaseConfig';
-import { subscribeTotalUnread } from '@/services/firebase/chatRepository';
-import { subscribeNotifications } from '@/services/firebase/notificationRepository';
-
 import { DesktopSideNav } from '@/components/DesktopSideNav';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
@@ -24,24 +20,47 @@ function BadgeDot({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
     <View style={{ position: 'absolute', top: -2, right: -6, minWidth: 14, height: 14, borderRadius: 7, backgroundColor: '#f6465d', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 }}>
-      <Text style={{ color: '#fff', fontSize: 8, fontWeight: '900' }}>{count > 9 ? '9+' : count}</Text>
+      <Text style={{ color: '#fff', fontSize: 8, fontWeight: '900' }}>{count > 9 ? '9+' : String(count)}</Text>
     </View>
   );
+}
+
+/** Lazily imports Firebase badge subscriptions — loaded only after auth is ready. */
+function useBadges() {
+  const [unreadNotif, setUnreadNotif] = useState(0);
+
+  useEffect(() => {
+    let unsub: (() => void) | null = null;
+
+    const init = async () => {
+      try {
+        const { auth } = await import('@/config/firebaseConfig');
+        const uid = auth?.currentUser?.uid;
+        if (!uid) return;
+        const { subscribeNotifications } = await import('@/services/firebase/notificationRepository');
+        unsub = subscribeNotifications(uid, (ns) => {
+          setUnreadNotif(ns.filter((n) => !n.read).length);
+        });
+      } catch {
+        // Firebase not available — silently ignore
+      }
+    };
+
+    // Small delay to let auth initialize
+    const t = setTimeout(() => { void init(); }, 1500);
+    return () => {
+      clearTimeout(t);
+      unsub?.();
+    };
+  }, []);
+
+  return { unreadNotif };
 }
 
 function TabLayoutInner() {
   const { isNavRail } = useBreakpoint();
   const headerShown = useClientOnlyValue(false, true);
-  const myUid = auth?.currentUser?.uid ?? '';
-  const [unreadChat, setUnreadChat] = useState(0);
-  const [unreadNotif, setUnreadNotif] = useState(0);
-
-  useEffect(() => {
-    if (!myUid) return;
-    const u1 = subscribeTotalUnread(myUid, setUnreadChat);
-    const u2 = subscribeNotifications(myUid, (ns) => setUnreadNotif(ns.filter((n) => !n.read).length));
-    return () => { u1(); u2(); };
-  }, [myUid]);
+  const { unreadNotif } = useBadges();
 
   const renderTabBar = useCallback(
     (props: BottomTabBarProps) => (isNavRail ? null : <BottomTabBar {...props} />),

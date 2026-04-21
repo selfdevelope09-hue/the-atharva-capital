@@ -9,6 +9,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Pressable,
   ScrollView,
   Text,
@@ -46,19 +47,14 @@ interface Props {
 
 function Avatar({ url, name, size = 64 }: { url: string; name: string; size?: number }) {
   const initials = name ? name[0].toUpperCase() : '?';
-  if (url) {
+  const [imgErr, setImgErr] = React.useState(false);
+
+  if (url && !imgErr) {
     return (
-      // @ts-ignore
-      <img
-        src={url}
-        style={{
-          width: size, height: size, borderRadius: size / 2,
-          objectFit: 'cover', border: `2px solid ${T.border}`,
-        }}
-        alt={name}
-        onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
-          (e.target as HTMLImageElement).style.display = 'none';
-        }}
+      <Image
+        source={{ uri: url }}
+        style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: T.border }}
+        onError={() => setImgErr(true)}
       />
     );
   }

@@ -1,42 +1,56 @@
 /**
- * AADS Banner Ad Unit #2435144 — exact embed code as specified.
- * Web-only: renders null on native (no crash).
- * Auto-refreshes every 30 seconds by reloading the iframe src.
+ * AADS Banner Ad Unit #2435144 — safe DOM injection (no dangerouslySetInnerHTML).
+ * Web-only: renders null on native.
+ * Auto-refreshes every 30 seconds.
  *
- * Placement rules (STRICT):
- *  ✅ Below main navbar
- *  ✅ Sidebar bottom
- *  ✅ Below chart on mobile (above bottom nav)
- *  ❌ NEVER inside chart/candle area
- *  ❌ NEVER inside order/position panel
- *  ❌ NEVER over trade buttons
+ * Placement rules:
+ *  ✅ Below main navbar / sidebar bottom / below chart on mobile
+ *  ❌ NEVER inside chart / order / position panels
  */
 
 import React, { useEffect, useRef } from 'react';
 import { Platform, View } from 'react-native';
 
 const REFRESH_MS = 30_000;
+const AD_UNIT = '2435144';
 
 export function AadsBanner() {
   const containerRef = useRef<View>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
 
-    const refresh = () => {
-      const iframe = document.querySelector<HTMLIFrameElement>('[data-aa="2435144"]');
-      if (iframe) {
-        const base = iframe.src.split('&t=')[0];
-        iframe.src = '';
-        // small tick to force reload
-        setTimeout(() => { iframe.src = `${base}&t=${Date.now()}`; }, 50);
-      }
-    };
+    // Find the DOM node backing the View ref
+    const domNode = (containerRef.current as unknown as HTMLElement | null);
+    if (!domNode) return;
 
-    timerRef.current = setInterval(refresh, REFRESH_MS);
+    // Build the AADS iframe via DOM API (no dangerouslySetInnerHTML)
+    const frame = document.createElement('div');
+    frame.id = 'aads-frame-2435144';
+    frame.style.cssText = `width:100%;margin:auto;position:relative;z-index:99998`;
+
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('data-aa', AD_UNIT);
+    iframe.src = `//acceptable.a-ads.com/${AD_UNIT}/?size=Adaptive`;
+    iframe.style.cssText = `border:0;padding:0;width:70%;height:auto;overflow:hidden;display:block;margin:auto`;
+    iframe.setAttribute('scrolling', 'no');
+
+    frame.appendChild(iframe);
+    domNode.appendChild(frame);
+
+    // 30-second refresh
+    const intervalId = setInterval(() => {
+      const el = domNode.querySelector<HTMLIFrameElement>(`[data-aa="${AD_UNIT}"]`);
+      if (el) {
+        const base = el.src.split('&t=')[0];
+        el.src = '';
+        setTimeout(() => { el.src = `${base}&t=${Date.now()}`; }, 50);
+      }
+    }, REFRESH_MS);
+
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      clearInterval(intervalId);
+      try { domNode.removeChild(frame); } catch { /* already removed */ }
     };
   }, []);
 
@@ -44,29 +58,8 @@ export function AadsBanner() {
 
   return (
     <View
-      style={{ width: '100%', alignItems: 'center', backgroundColor: 'transparent' }}
-      // @ts-ignore — web-only dangerouslySetInnerHTML equivalent via nativeID
-      nativeID="aads-banner-2435144"
-    >
-      {/* AADS Ad Unit 2435144 — exact embed code */}
-      {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
-      {/* @ts-ignore */}
-      <div
-        id="frame"
-        style={{
-          width: '100%',
-          margin: 'auto',
-          position: 'relative',
-          zIndex: 99998,
-        }}
-        // @ts-ignore
-        dangerouslySetInnerHTML={{
-          __html: `<iframe data-aa='2435144'
-            src='//acceptable.a-ads.com/2435144/?size=Adaptive'
-            style='border:0;padding:0;width:70%;height:auto;overflow:hidden;display:block;margin:auto'
-          ></iframe>`,
-        }}
-      />
-    </View>
+      ref={containerRef}
+      style={{ width: '100%', minHeight: 60, alignItems: 'center', justifyContent: 'center' }}
+    />
   );
 }

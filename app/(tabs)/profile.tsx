@@ -1,7 +1,8 @@
 import React from 'react';
-import { auth } from '@/config/firebaseConfig';
-import { ProfileScreen } from '@/src/screens/ProfileScreen';
 import { View, Text } from 'react-native';
+import { auth } from '@/config/firebaseConfig';
+import { ScreenErrorBoundary } from '@/src/components/ScreenErrorBoundary';
+import { ProfileScreen } from '@/src/screens/ProfileScreen';
 import { T } from '@/src/constants/theme';
 
 export default function ProfileTab() {
@@ -13,5 +14,9 @@ export default function ProfileTab() {
       </View>
     );
   }
-  return <ProfileScreen userId={uid} />;
+  return (
+    <ScreenErrorBoundary>
+      <ProfileScreen userId={uid} />
+    </ScreenErrorBoundary>
+  );
 }
