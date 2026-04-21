@@ -89,42 +89,19 @@ export function LoginScreen() {
     return () => clearTimeout(id);
   }, [resendTimer]);
 
-  // ── reCAPTCHA: initialise on mount (web only) ────────────────────────────
-  // Creating the verifier up-front (rather than lazily on button click) ensures
-  // the DOM anchor is ready and the invisible widget pre-renders in the background.
+  // reCAPTCHA is initialised lazily just before each OTP send attempt.
+  // Mounting it eagerly caused race conditions with the DOM anchor not yet existing.
   useEffect(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined' || !auth) return;
-
-    function createVerifier() {
-      try {
-        const v = new RecaptchaVerifier(auth!, 'recaptcha-container', {
-          size: 'invisible',
-          callback: () => {},
-          'expired-callback': () => {
-            // Token expired — silently recreate so the next OTP attempt works
-            try { recaptchaRef.current?.clear(); } catch { /* ignore */ }
-            recaptchaRef.current = null;
-            createVerifier();
-          },
-        });
-        recaptchaRef.current = v;
-        // Also expose on window so Firebase internals can find it if needed
-        (window as Record<string, unknown>).recaptchaVerifier = v;
-      } catch (e) {
-        if (__DEV__) console.warn('[reCAPTCHA] init failed:', e);
-      }
-    }
-
-    createVerifier();
-
     return () => {
+      // Cleanup on unmount
       try {
         recaptchaRef.current?.clear();
         recaptchaRef.current = null;
-        delete (window as Record<string, unknown>).recaptchaVerifier;
-      } catch {
-        // ignore
-      }
+        if (typeof window !== 'undefined') {
+          delete (window as Record<string, unknown>).recaptchaVerifier;
+          delete (window as Record<string, unknown>).confirmationResult;
+        }
+      } catch { /* ignore */ }
     };
   }, []);
 
@@ -200,6 +177,38 @@ export function LoginScreen() {
     }
   }
 
+  // ── OTP error parser ─────────────────────────────────────────────────────
+  function parseFirebaseError(e: unknown): string {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('auth/invalid-phone-number') || msg.includes('invalid-phone-number'))
+      return 'Invalid phone number. Use format: +91XXXXXXXXXX';
+    if (msg.includes('auth/too-many-requests') || msg.includes('too-many-requests'))
+      return 'Too many attempts. Please wait a few minutes and try again.';
+    if (msg.includes('auth/quota-exceeded') || msg.includes('quota-exceeded'))
+      return 'SMS quota exceeded. Try again later.';
+    if (msg.includes('auth/network-request-failed') || msg.includes('network-request-failed'))
+      return 'Network error. Check your internet connection.';
+    if (msg.includes('auth/captcha-check-failed') || msg.includes('captcha'))
+      return 'reCAPTCHA check failed. Please try again.';
+    if (msg.includes('auth/missing-phone-number') || msg.includes('missing-phone-number'))
+      return 'Please enter your phone number.';
+    if (msg.includes('auth/app-not-authorized') || msg.includes('app-not-authorized'))
+      return 'App not authorized for phone auth. Contact support.';
+    if (msg.includes('auth/operation-not-allowed') || msg.includes('operation-not-allowed'))
+      return 'Phone sign-in is disabled. Contact support.';
+    return msg.length > 120 ? msg.slice(0, 120) + '…' : msg;
+  }
+
+  function resetRecaptcha() {
+    try {
+      recaptchaRef.current?.clear();
+      recaptchaRef.current = null;
+      if (typeof window !== 'undefined') {
+        delete (window as Record<string, unknown>).recaptchaVerifier;
+      }
+    } catch { /* ignore */ }
+  }
+
   // ── Phone OTP — send ──────────────────────────────────────────────────────
   async function handleSendOtp() {
     if (!isFirebaseConfigured || !auth) {
@@ -208,47 +217,38 @@ export function LoginScreen() {
     }
     const digits = phone.replace(/\D/g, '');
     if (digits.length < 6) {
-      setError('Enter a valid phone number.');
+      setError('Enter a valid phone number (min 6 digits).');
       return;
     }
     clearError();
     setLoading(true);
-    // Always include country code; strip any leading zeros from the local number
-    const e164 = `${dialCode}${digits}`;
+    // Strip leading zeros from local number, prepend dial code
+    const localDigits = digits.replace(/^0+/, '');
+    const e164 = `${dialCode}${localDigits}`;
     try {
       if (Platform.OS === 'web') {
-        // Ensure the verifier is alive (it may have been cleared after a previous error)
-        if (!recaptchaRef.current) {
-          recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
-            size: 'invisible',
-            callback: () => {},
-            'expired-callback': () => {
-              try { recaptchaRef.current?.clear(); } catch { /* ignore */ }
-              recaptchaRef.current = null;
-            },
-          });
-          (window as Record<string, unknown>).recaptchaVerifier = recaptchaRef.current;
-        }
-        const confirmation = await signInWithPhoneNumber(auth, e164, recaptchaRef.current);
+        // Always create a fresh verifier — avoids stale-token errors
+        resetRecaptcha();
+        const v = new RecaptchaVerifier(auth, 'recaptcha-container', {
+          size: 'invisible',
+          callback: () => {},
+          'expired-callback': () => { resetRecaptcha(); },
+        });
+        recaptchaRef.current = v;
+        (window as Record<string, unknown>).recaptchaVerifier = v;
+
+        const confirmation = await signInWithPhoneNumber(auth, e164, v);
         confirmationRef.current = confirmation;
-        // Also store on window for easier access / debugging
         (window as Record<string, unknown>).confirmationResult = confirmation;
       } else {
+        // Native: sendPhoneOtp from authProvider (uses linkWithPhoneNumber)
         await sendPhoneOtp(e164, {} as never);
       }
       setStep('otp');
       setResendTimer(30);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
-      // Reset reCAPTCHA so the next attempt gets a fresh token
-      try {
-        recaptchaRef.current?.clear();
-        recaptchaRef.current = null;
-        delete (window as Record<string, unknown>).recaptchaVerifier;
-      } catch {
-        // ignore
-      }
+      setError(parseFirebaseError(e));
+      resetRecaptcha();
     } finally {
       setLoading(false);
     }
@@ -285,7 +285,13 @@ export function LoginScreen() {
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(msg.includes('invalid-verification-code') ? 'Invalid OTP. Please try again.' : msg);
+      if (msg.includes('invalid-verification-code') || msg.includes('invalid-verification-code')) {
+        setError('Invalid OTP. Please check the code and try again.');
+      } else if (msg.includes('code-expired') || msg.includes('session-expired')) {
+        setError('OTP expired. Please request a new one.');
+      } else {
+        setError(parseFirebaseError(e));
+      }
     } finally {
       setLoading(false);
     }

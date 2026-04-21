@@ -1,8 +1,12 @@
 import { BottomTabBar, type BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Tabs } from 'expo-router';
-import { useCallback, useMemo, type ComponentProps } from 'react';
-import { View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
+
+import { auth } from '@/config/firebaseConfig';
+import { subscribeTotalUnread } from '@/services/firebase/chatRepository';
+import { subscribeNotifications } from '@/services/firebase/notificationRepository';
 
 import { DesktopSideNav } from '@/components/DesktopSideNav';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
@@ -16,9 +20,28 @@ function TabBarIcon(props: {
   return <FontAwesome size={28} style={{ marginBottom: -3 }} {...props} />;
 }
 
+function BadgeDot({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <View style={{ position: 'absolute', top: -2, right: -6, minWidth: 14, height: 14, borderRadius: 7, backgroundColor: '#f6465d', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 }}>
+      <Text style={{ color: '#fff', fontSize: 8, fontWeight: '900' }}>{count > 9 ? '9+' : count}</Text>
+    </View>
+  );
+}
+
 function TabLayoutInner() {
   const { isNavRail } = useBreakpoint();
   const headerShown = useClientOnlyValue(false, true);
+  const myUid = auth?.currentUser?.uid ?? '';
+  const [unreadChat, setUnreadChat] = useState(0);
+  const [unreadNotif, setUnreadNotif] = useState(0);
+
+  useEffect(() => {
+    if (!myUid) return;
+    const u1 = subscribeTotalUnread(myUid, setUnreadChat);
+    const u2 = subscribeNotifications(myUid, (ns) => setUnreadNotif(ns.filter((n) => !n.read).length));
+    return () => { u1(); u2(); };
+  }, [myUid]);
 
   const renderTabBar = useCallback(
     (props: BottomTabBarProps) => (isNavRail ? null : <BottomTabBar {...props} />),
@@ -95,7 +118,20 @@ function TabLayoutInner() {
               options={{
                 title: 'Alerts',
                 headerShown: false,
-                tabBarIcon: ({ color }) => <TabBarIcon name="bell" color={color} />,
+                tabBarIcon: ({ color }) => (
+                  <View>
+                    <TabBarIcon name="bell" color={color} />
+                    <BadgeDot count={unreadNotif} />
+                  </View>
+                ),
+              }}
+            />
+            <Tabs.Screen
+              name="profile"
+              options={{
+                title: 'Profile',
+                headerShown: false,
+                tabBarIcon: ({ color }) => <TabBarIcon name="user" color={color} />,
               }}
             />
           </Tabs>

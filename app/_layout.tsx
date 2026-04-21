@@ -212,12 +212,16 @@ function AppContent() {
         {/* AuthGuard + AdManager both need to be inside the navigation context */}
         <AuthGuard />
         <AdManager />
-        <Stack>
+          <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="login" options={{ headerShown: false }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
           <Stack.Screen name="v2" options={{ headerShown: false }} />
           <Stack.Screen name="markets" options={{ headerShown: false }} />
+          <Stack.Screen name="profile/[userId]" options={{ headerShown: false }} />
+          <Stack.Screen name="chats/index" options={{ headerShown: false }} />
+          <Stack.Screen name="chats/[conversationId]" options={{ headerShown: false }} />
+          <Stack.Screen name="topup/[market]" options={{ headerShown: false }} />
         </Stack>
         <SmartBanner />
         <InterstitialModal />
