@@ -1,11 +1,18 @@
 import { Platform } from 'react-native';
 
-// Yahoo Finance v8 chart endpoint does NOT set CORS headers, so on web we
-// route through a proxy. Override this via env/config in prod.
-//   - Native (iOS/Android): no proxy needed; we hit Yahoo directly.
-//   - Web: proxy required. Default is corsproxy.io; swap for your backend.
-export const YAHOO_PROXY_BASE = 'https://corsproxy.io/?';
+// CORS proxies tried in order. First success wins.
 const YAHOO_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart/';
+const CORS_PROXIES = [
+  'https://corsproxy.io/?',
+  'https://api.allorigins.win/raw?url=',
+  'https://thingproxy.freeboard.io/fetch/',
+];
+
+// Track which proxy index is currently working to avoid redundant retries
+let _activeProxyIdx = 0;
+
+/** @deprecated Use fetchYahooQuote which handles proxies automatically */
+export const YAHOO_PROXY_BASE = CORS_PROXIES[0];
 
 export interface YahooQuote {
   symbol: string;
@@ -23,38 +30,66 @@ export interface YahooQuote {
   fetchedAt: number;
 }
 
-function buildUrl(fullSymbol: string): string {
+function buildUrl(fullSymbol: string, proxyIdx = 0): string {
   const raw = `${YAHOO_BASE}${encodeURIComponent(fullSymbol)}?interval=1d&range=1d`;
-  if (Platform.OS === 'web') return `${YAHOO_PROXY_BASE}${encodeURIComponent(raw)}`;
-  return raw;
+  if (Platform.OS !== 'web') return raw;
+  return `${CORS_PROXIES[proxyIdx]}${encodeURIComponent(raw)}`;
+}
+
+function parseYahooResponse(json: unknown, fullSymbol: string): YahooQuote | null {
+  const r = (json as Record<string, unknown>)?.['chart'] as Record<string, unknown>;
+  const result = (r?.['result'] as unknown[])?.[0] as Record<string, unknown> | undefined;
+  const meta = result?.['meta'] as Record<string, unknown> | undefined;
+  if (!meta) return null;
+  return {
+    symbol: fullSymbol,
+    price: num(meta['regularMarketPrice']),
+    open: num(meta['regularMarketOpen'] ?? meta['chartPreviousClose']),
+    high: num(meta['regularMarketDayHigh']),
+    low: num(meta['regularMarketDayLow']),
+    volume: num(meta['regularMarketVolume']),
+    marketState: typeof meta['marketState'] === 'string' ? meta['marketState'] : null,
+    preMarketPrice: num(meta['preMarketPrice']),
+    postMarketPrice: num(meta['postMarketPrice']),
+    prevClose: num(meta['chartPreviousClose'] ?? meta['previousClose']),
+    fiftyTwoWeekHigh: num(meta['fiftyTwoWeekHigh'] ?? meta['regularMarketDayHigh']),
+    fiftyTwoWeekLow: num(meta['fiftyTwoWeekLow'] ?? meta['regularMarketDayLow']),
+    fetchedAt: Date.now(),
+  };
 }
 
 export async function fetchYahooQuote(fullSymbol: string, signal?: AbortSignal): Promise<YahooQuote | null> {
-  try {
-    const res = await fetch(buildUrl(fullSymbol), { signal });
-    if (!res.ok) return null;
-    const json = await res.json();
-    const r = json?.chart?.result?.[0];
-    const meta = r?.meta;
-    if (!meta) return null;
-    return {
-      symbol: fullSymbol,
-      price: num(meta.regularMarketPrice),
-      open: num(meta.regularMarketOpen ?? meta.chartPreviousClose),
-      high: num(meta.regularMarketDayHigh),
-      low: num(meta.regularMarketDayLow),
-      volume: num(meta.regularMarketVolume),
-      marketState: meta.marketState ?? null,
-      preMarketPrice: num(meta.preMarketPrice),
-      postMarketPrice: num(meta.postMarketPrice),
-      prevClose: num(meta.chartPreviousClose ?? meta.previousClose),
-      fiftyTwoWeekHigh: num(meta.fiftyTwoWeekHigh ?? meta.regularMarketDayHigh),
-      fiftyTwoWeekLow: num(meta.fiftyTwoWeekLow ?? meta.regularMarketDayLow),
-      fetchedAt: Date.now(),
-    };
-  } catch {
-    return null;
+  if (Platform.OS !== 'web') {
+    // Native: direct request, no proxy needed
+    try {
+      const res = await fetch(buildUrl(fullSymbol), { signal });
+      if (!res.ok) return null;
+      return parseYahooResponse(await res.json(), fullSymbol);
+    } catch { return null; }
   }
+
+  // Web: try each proxy starting from the last known-good one
+  const start = _activeProxyIdx;
+  for (let i = 0; i < CORS_PROXIES.length; i++) {
+    const idx = (start + i) % CORS_PROXIES.length;
+    if (signal?.aborted) return null;
+    try {
+      const res = await fetch(buildUrl(fullSymbol, idx), {
+        signal,
+        headers: { 'Accept': 'application/json' },
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      const q = parseYahooResponse(json, fullSymbol);
+      if (q) {
+        _activeProxyIdx = idx; // remember the working proxy
+        return q;
+      }
+    } catch {
+      // try next proxy
+    }
+  }
+  return null;
 }
 
 const BATCH_SIZE = 3;
