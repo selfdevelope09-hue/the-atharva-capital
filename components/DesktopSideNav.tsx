@@ -11,6 +11,7 @@ import { usePathname, useRouter } from 'expo-router';
 import { FontSans } from '@/constants/theme';
 import { useThemeStore } from '@/store/themeStore';
 import { auth } from '@/config/firebaseConfig';
+import { AadsAdaptiveBanner } from '@/src/components/ads/AadsAdaptiveBanner';
 import { T } from '@/src/constants/theme';
 
 type NavHref = string;
@@ -168,6 +169,11 @@ function DesktopSideNavInner() {
         <Badge count={unreadChat} />
       </Pressable>
 
+      {/* A-ADS strip — below nav, above profile (does not overlap chart) */}
+      <View style={{ paddingHorizontal: 8, paddingVertical: 8 }}>
+        <AadsAdaptiveBanner widthPct={100} />
+      </View>
+
       {/* Spacer */}
       <View style={{ flex: 1 }} />
 
@@ -189,6 +195,9 @@ function DesktopSideNavInner() {
           <View style={{ backgroundColor: palette.surface, borderRadius: 10, borderWidth: 1, borderColor: palette.border, overflow: 'hidden', marginTop: 4 }}>
             {[
               { label: '👤 View Profile', href: myUid ? `/profile/${myUid}` : '/login' },
+              { label: '✏️ Edit Profile', href: myUid ? `/profile/${myUid}` : '/login' },
+              { label: '⚙️ Settings', href: '/modal' },
+              { label: '📜 Trade History', href: '/trades' },
               { label: '💬 Messages', href: '/chats' },
             ].map((item) => (
               <Pressable

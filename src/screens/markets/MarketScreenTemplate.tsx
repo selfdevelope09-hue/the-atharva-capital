@@ -3,7 +3,8 @@
  * Inline styles only; accent from market config; equities + optional India F&O tab.
  */
 
-import { BannerAd } from '@/src/components/ads/BannerAd';
+import { AadsAdaptiveBanner } from '@/src/components/ads/AadsAdaptiveBanner';
+import { MonetagBanner } from '@/src/components/ads/MonetagBanner';
 import { runRewardedForCashAndUnlocks } from '@/services/ads/RewardedAds';
 import { useRouter, type Href } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -544,7 +545,7 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
         </View>
 
         <View style={{ paddingHorizontal: 16 }}>
-          <BannerAd slot="top" />
+          <AadsAdaptiveBanner widthPct={100} />
         </View>
 
         <View style={{ backgroundColor: T.bg0, paddingBottom: 8 }}>
@@ -609,7 +610,6 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
                 return (
                   <React.Fragment key={row.full}>
                     <StockCard row={row} routeTicker={routeTicker} displaySymbol={displaySymbol} />
-                    {(i + 1) % 8 === 0 && <BannerAd slot="inline" />}
                   </React.Fragment>
                 );
               })
@@ -712,6 +712,14 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
             )}
           </View>
         )}
+
+        {/* Footer ads only — not between chart and order flow */}
+        <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 }}>
+          <Text style={{ color: T.text3, fontSize: 9, marginBottom: 4 }}>SPONSORED</Text>
+          <AadsAdaptiveBanner widthPct={100} />
+          <View style={{ height: 8 }} />
+          <MonetagBanner variant="native" />
+        </View>
           </ScrollView>
         </View>
         <BottomPanel marketId={marketId} />

@@ -28,13 +28,15 @@ import {
 } from 'react-native';
 
 import { auth, db, isFirebaseConfigured } from '@/config/firebaseConfig';
-import { BannerAd } from '@/src/components/ads/BannerAd';
+import { AadsAdaptiveBanner } from '@/src/components/ads/AadsAdaptiveBanner';
+import { MonetagBanner } from '@/src/components/ads/MonetagBanner';
 import { getOrCreateConversation } from '@/services/firebase/chatRepository';
 import { T } from '@/src/constants/theme';
 import { useProfileStore } from '@/store/profileStore';
 import { useLedgerStore } from '@/store/ledgerStore';
 
-type LBMarket = 'crypto' | 'india' | 'usa' | 'uk' | 'china' | 'japan' | 'australia' | 'germany' | 'canada' | 'switzerland' | 'global';
+/** Firestore: leaderboard/{crypto|forex|stocks|commodities}/entries/{uid} */
+type LBMarket = 'crypto' | 'forex' | 'stocks' | 'commodities';
 
 interface LBEntry {
   uid: string;
@@ -66,34 +68,6 @@ function InlineBanner({ slotId }: { slotId: string }) {
 
   if (Platform.OS !== 'web') return null;
   return <View ref={ref} style={{ width: '100%', height: 60, marginVertical: 4 }} />;
-}
-
-// ── Ad zone at top of each tab — uses AADS (no popunder script needed) ─────────
-function TabAdZone() {
-  const ref = useRef<View>(null);
-
-  useEffect(() => {
-    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-    const node = ref.current as unknown as HTMLElement | null;
-    if (!node) return;
-    const label = document.createElement('p');
-    label.textContent = 'Advertisement';
-    label.style.cssText = 'color:#555;font-size:11px;text-align:right;margin:0 0 4px;padding:0';
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute('data-aa', '2435144');
-    iframe.src = `//acceptable.a-ads.com/2435144/?size=Adaptive&t=${Date.now()}`;
-    iframe.style.cssText = 'border:0;width:100%;max-height:90px;overflow:hidden;display:block;pointer-events:auto';
-    iframe.setAttribute('scrolling', 'no');
-    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
-    node.appendChild(label);
-    node.appendChild(iframe);
-    return () => {
-      try { node.removeChild(label); node.removeChild(iframe); } catch { /* ignore */ }
-    };
-  }, []);
-
-  if (Platform.OS !== 'web') return null;
-  return <View ref={ref} style={{ width: '100%', minHeight: 60, marginBottom: 8 }} />;
 }
 
 // ── Avatar ─────────────────────────────────────────────────────────────────────
@@ -149,9 +123,7 @@ function UserCard({ entry, onClose, market }: { entry: LBEntry; onClose: () => v
   };
 
   const symMap: Record<string, string> = {
-    crypto: '₮', india: '₹', usa: '$', uk: '£',
-    china: '¥', japan: '¥', australia: 'A$', germany: '€',
-    canada: 'C$', switzerland: 'Fr.', global: '$',
+    crypto: '₮', forex: '$', stocks: '$', commodities: '$',
   };
   const sym = symMap[market] ?? '$';
 
@@ -206,44 +178,44 @@ function UserCard({ entry, onClose, market }: { entry: LBEntry; onClose: () => v
   );
 }
 
-// ── Market tab config ──────────────────────────────────────────────────────────
+// ── Category tabs (Firestore paths) ────────────────────────────────────────────
 const TABS: { id: LBMarket; label: string }[] = [
-  { id: 'global', label: '🌍 Global' },
   { id: 'crypto', label: '🌐 Crypto' },
-  { id: 'india', label: '🇮🇳 India' },
-  { id: 'usa', label: '🇺🇸 USA' },
-  { id: 'uk', label: '🇬🇧 UK' },
-  { id: 'china', label: '🇨🇳 China' },
-  { id: 'japan', label: '🇯🇵 Japan' },
-  { id: 'australia', label: '🇦🇺 ASX' },
-  { id: 'germany', label: '🇩🇪 XETRA' },
-  { id: 'canada', label: '🇨🇦 TSX' },
-  { id: 'switzerland', label: '🇨🇭 SIX' },
+  { id: 'forex', label: '💱 Forex' },
+  { id: 'stocks', label: '📈 Stocks' },
+  { id: 'commodities', label: '🛢 Commodities' },
 ];
 
 const SYM_MAP: Record<string, string> = {
-  crypto: '₮', india: '₹', usa: '$', uk: '£',
-  china: '¥', japan: '¥', australia: 'A$', germany: '€',
-  canada: 'C$', switzerland: 'Fr.', global: '$',
+  crypto: '₮', forex: '$', stocks: '$', commodities: '$',
 };
+
+function closedTradesForTab(
+  tab: LBMarket,
+  trades: import('@/types/ledger').LedgerClosedTrade[],
+): import('@/types/ledger').LedgerClosedTrade[] {
+  if (tab === 'crypto') return trades.filter((t) => t.market === 'crypto');
+  if (tab === 'stocks') return trades.filter((t) => t.market !== 'crypto');
+  return [];
+}
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function Leaderboard() {
   const myUid = auth?.currentUser?.uid ?? '';
-  const [tab, setTab] = useState<LBMarket>('global');
+  const [tab, setTab] = useState<LBMarket>('crypto');
   const [entries, setEntries] = useState<LBEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [userCard, setUserCard] = useState<LBEntry | null>(null);
 
   const closedTrades = useLedgerStore((s) => s.closedTrades);
-  // Use firebaseUser (correct field name in profileStore)
   const firebaseUser = useProfileStore((s) => s.firebaseUser);
 
   const myEntry = useMemo<LBEntry>(() => {
-    const wins = closedTrades.filter((t) => t.realizedPnl > 0).length;
-    const total = closedTrades.length;
-    const pnl = closedTrades.reduce((sum, t) => sum + t.realizedPnl, 0);
+    const subset = closedTradesForTab(tab, closedTrades);
+    const wins = subset.filter((t) => t.realizedPnl > 0).length;
+    const total = subset.length;
+    const pnl = subset.reduce((sum, t) => sum + t.realizedPnl, 0);
     const currentUser = auth?.currentUser;
     return {
       uid: myUid,
@@ -254,7 +226,7 @@ export default function Leaderboard() {
       pnl,
       winRate: total > 0 ? (wins / total) * 100 : 0,
     };
-  }, [closedTrades, firebaseUser, myUid]);
+  }, [closedTrades, firebaseUser, myUid, tab]);
 
   useEffect(() => {
     if (!isFirebaseConfigured || !db) {
@@ -350,8 +322,10 @@ export default function Leaderboard() {
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg0 }}>
-      {/* AADS Banner below header */}
-      <BannerAd slot="top" />
+      {/* A-ADS below title strip (non-intrusive) */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+        <AadsAdaptiveBanner widthPct={100} />
+      </View>
 
       {/* Header */}
       <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 }}>
@@ -399,8 +373,11 @@ export default function Leaderboard() {
         })}
       </ScrollView>
 
-      {/* Monetag Video Zone */}
-      <TabAdZone />
+      {/* Video / native zone (Monetag placeholder — no popunder scripts) */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+        <Text style={{ color: T.text3, fontSize: 9, marginBottom: 4 }}>ADVERTISEMENT</Text>
+        <MonetagBanner variant="video" />
+      </View>
 
       {/* Table header */}
       <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: T.border }}>

@@ -241,11 +241,19 @@ export function ProfileScreen({ userId }: Props) {
         </View>
 
         {/* Action buttons */}
-        <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
+          {isOwn && !editing && (
+            <Pressable
+              onPress={() => router.push('/trades' as never)}
+              style={{ minWidth: '45%', flexGrow: 1, backgroundColor: T.bg2, borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: S.border }}
+            >
+              <Text style={{ color: S.text, fontWeight: '700', fontSize: 13 }}>📜 Trade History</Text>
+            </Pressable>
+          )}
           {isOwn && !editing && (
             <Pressable
               onPress={() => { setEditing(true); setNameDraft(profile.displayName); setBioDraft(profile.bio); }}
-              style={{ flex: 1, backgroundColor: T.bg3, borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: S.border }}
+              style={{ minWidth: '45%', flexGrow: 1, backgroundColor: T.bg3, borderRadius: 10, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: S.border }}
             >
               <Text style={{ color: S.text, fontWeight: '700', fontSize: 13 }}>✏️ Edit Profile</Text>
             </Pressable>

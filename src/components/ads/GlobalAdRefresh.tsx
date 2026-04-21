@@ -31,8 +31,10 @@ export function GlobalAdRefresh() {
       }
     };
 
-    const id = window.setInterval(tick, 30_000);
-    return () => window.clearInterval(id);
+    const w = typeof globalThis !== 'undefined' ? (globalThis as unknown as { window?: Window }).window : undefined;
+    if (!w) return;
+    const id = w.setInterval(tick, 30_000);
+    return () => w.clearInterval(id);
   }, []);
 
   return null;
