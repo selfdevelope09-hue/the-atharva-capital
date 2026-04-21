@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npx expo export --platform web",
+  "buildCommand": "npx expo export --platform web && node scripts/patch-web-export-html.cjs",
   "outputDirectory": "dist",
   "framework": null,
   "rewrites": [
@@ -7,8 +7,10 @@
   ],
   "headers": [
     {
-      "source": "/sw.js",
-      "headers": [{ "key": "Service-Worker-Allowed", "value": "/" }]
+      "source": "/(.*).js",
+      "headers": [
+        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" }
+      ]
     }
   ]
 }

@@ -3,5 +3,9 @@ const { withNativeWind } = require('nativewind/metro');
 
 const config = getDefaultConfig(__dirname);
 config.resolver.platforms = ['ios', 'android', 'native', 'web'];
+config.transformer = {
+  ...config.transformer,
+  unstable_allowRequireContext: true,
+};
 
 module.exports = withNativeWind(config, { input: './global.css' });
