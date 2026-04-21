@@ -24,7 +24,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
-import { BannerAd } from '@/src/components/ads/BannerAd';
+// BannerAd intentionally removed from BottomPanel — ads must not cover trading panels
 import { MARKETS, type MarketId } from '@/src/constants/markets';
 import { T, fmtPct } from '@/src/constants/theme';
 import { useMarketPrices, useMarketSubscribe } from '@/src/contexts/MarketPriceContext';
@@ -92,7 +92,8 @@ export interface BottomPanelProps {
 export function BottomPanel({ marketId }: BottomPanelProps) {
   const cfg = MARKETS[marketId];
   const sym = cfg.currencySymbol;
-  const { height: screenH } = useWindowDimensions();
+  const { height: screenH, width: screenW } = useWindowDimensions();
+  const isMobile = screenW < 768;
 
   // ── Panel state ─────────────────────────────────────────────────────────────
   const [panelHeight, setPanelHeight] = useState(DEFAULT_H);
@@ -208,12 +209,36 @@ export function BottomPanel({ marketId }: BottomPanelProps) {
   const panHRef = useRef(DEFAULT_H);
   useEffect(() => { panHRef.current = panelHeight; }, [panelHeight]);
 
+  // Web: mouse-based resize (PanResponder only fires touch events on web RNW)
+  const webDragging = useRef(false);
+  const webStartY = useRef(0);
+  const webStartH = useRef(DEFAULT_H);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onMouseMove = (e: MouseEvent) => {
+      if (!webDragging.current) return;
+      const diff = webStartY.current - e.clientY;
+      const newH = Math.max(MIN_H, Math.min(screenH * 0.65, webStartH.current + diff));
+      setPanelHeight(Math.round(newH));
+      if (newH > MIN_H + 4) setMinimized(false);
+    };
+    const onMouseUp = () => { webDragging.current = false; };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [screenH]);
+
   const panResponder = useRef(
     PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 2,
-      onPanResponderGrant: () => { panHRef.current = panHRef.current; },
+      onPanResponderGrant: () => { webStartH.current = panHRef.current; },
       onPanResponderMove: (_, gs) => {
-        const newH = Math.max(MIN_H, Math.min(screenH * 0.6, panHRef.current - gs.dy));
+        const newH = Math.max(MIN_H, Math.min(screenH * 0.65, panHRef.current - gs.dy));
         setPanelHeight(Math.round(newH));
         if (newH > MIN_H + 4) setMinimized(false);
       },
@@ -337,14 +362,29 @@ export function BottomPanel({ marketId }: BottomPanelProps) {
   const bodyH = minimized ? 0 : panelHeight - TAB_BAR_H - (minimized ? 0 : 52) - 4; // 52 = stats bar approx
   const totalPanelH = minimized ? MIN_H : panelHeight;
 
+  // On mobile: collapsed by default (just tab bar); expand on tap
+  const mobilePanelH = minimized ? MIN_H : Math.min(panelHeight, screenH * 0.55);
+
   return (
-    <View style={{ height: totalPanelH, backgroundColor: T.bg1, borderTopWidth: 1, borderTopColor: T.border }}>
+    <View style={{
+      height: isMobile ? mobilePanelH : totalPanelH,
+      backgroundColor: T.bg1,
+      borderTopWidth: 1,
+      borderTopColor: T.border,
+    }}>
 
       {/* ── Drag handle ───────────────────────────────────────────────────────── */}
       <View
         {...panResponder.panHandlers}
+        // @ts-ignore — web-only onMouseDown for reliable mouse drag
+        onMouseDown={Platform.OS === 'web' ? (e: MouseEvent) => {
+          webDragging.current = true;
+          webStartY.current = e.clientY;
+          webStartH.current = panHRef.current;
+          e.preventDefault();
+        } : undefined}
         style={{
-          height: 6,
+          height: 10,
           width: '100%',
           backgroundColor: T.bg3,
           borderTopWidth: 1,
@@ -352,10 +392,10 @@ export function BottomPanel({ marketId }: BottomPanelProps) {
           alignItems: 'center',
           justifyContent: 'center',
           // @ts-ignore
-          cursor: Platform.OS === 'web' ? 'row-resize' : undefined,
+          cursor: Platform.OS === 'web' ? 'ns-resize' : undefined,
         }}
       >
-        <View style={{ width: 32, height: 2, backgroundColor: T.text3, borderRadius: 1 }} />
+        <View style={{ width: 40, height: 3, backgroundColor: T.text2, borderRadius: 2 }} />
       </View>
 
       {/* ── Stats bar ─────────────────────────────────────────────────────────── */}
@@ -624,12 +664,6 @@ export function BottomPanel({ marketId }: BottomPanelProps) {
                     <Text style={{ color: T.yellow, fontSize: 10, fontWeight: '700' }}>⬇ Export CSV</Text>
                   </Pressable>
                 ) : null}
-              </View>
-
-              {/* Banner ad */}
-              <View style={{ paddingHorizontal: 12 }}>
-                <Text style={{ color: T.text3, fontSize: 8, letterSpacing: 1, marginBottom: 2 }}>ADVERTISEMENT</Text>
-                <BannerAd slot="inline" refreshInterval={30_000} />
               </View>
 
               {marketClosed.length === 0 ? (

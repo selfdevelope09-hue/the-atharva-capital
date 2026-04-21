@@ -271,7 +271,32 @@ export function toYahooFullSymbol(cfg: MarketConfig, ticker: string): string {
   return yahooSymbolFor(cfg, ticker);
 }
 
+/**
+ * Returns the TradingView "EXCHANGE:SYMBOL" string for a given ticker.
+ * - Strips Yahoo suffixes (.NS, .L, .T, .AX, .DE, .TO, .SW, .SS, .SZ)
+ * - For China: routes SSE (6xxxxx) vs SZSE (0xxxxx / 3xxxxx) automatically
+ * - For Crypto: strips -USD, keeps USDT pairs as-is
+ */
 export function tvSymbolFor(cfg: MarketConfig, ticker: string): string {
+  // Strip any Yahoo finance suffix to get clean ticker
+  const clean = ticker
+    .replace(/\.NS$/i, '')
+    .replace(/\.L$/i, '')
+    .replace(/\.T$/i, '')
+    .replace(/\.AX$/i, '')
+    .replace(/\.DE$/i, '')
+    .replace(/\.TO$/i, '')
+    .replace(/\.SW$/i, '')
+    .replace(/\.SS$/i, '')
+    .replace(/\.SZ$/i, '')
+    .replace(/-USD$/i, 'USDT');
+
+  // China: Shanghai stocks start with 6; Shenzhen with 0 or 3
+  if (cfg.id === 'china') {
+    const exchange = clean.startsWith('6') ? 'SSE' : 'SZSE';
+    return `${exchange}:${clean}`;
+  }
+
   const exchange = cfg.tvExchange ?? '';
-  return exchange ? `${exchange}:${ticker}` : ticker;
+  return exchange ? `${exchange}:${clean}` : clean;
 }

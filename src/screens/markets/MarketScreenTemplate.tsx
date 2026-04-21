@@ -491,8 +491,8 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
 
       <TickerBar market={cfg} />
 
-      <View style={{ flex: 1 }}>
-        <View style={{ flex: 1, flexDirection: isWide ? 'row' : 'column' }}>
+      <View style={{ flex: 1, minHeight: 0 }}>
+        <View style={{ flex: 1, minHeight: 0, flexDirection: isWide ? 'row' : 'column' }}>
           {isWide ? (
             <LeftSidebar
               marketId={marketId}
@@ -502,7 +502,7 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
           ) : null}
 
           <ScrollView
-            style={{ flex: 1 }}
+            style={{ flex: 1, minHeight: 0 }}
             contentContainerStyle={{ paddingBottom: 48 }}
             stickyHeaderIndices={[1]}
             keyboardShouldPersistTaps="handled"

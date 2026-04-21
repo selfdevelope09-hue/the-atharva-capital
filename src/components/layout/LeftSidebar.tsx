@@ -17,7 +17,8 @@ import {
 } from 'react-native';
 
 import type { AppMarket } from '@/constants/appMarkets';
-import { auth } from '@/config/firebaseConfig';
+import { auth, db, isFirebaseConfigured } from '@/config/firebaseConfig';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import {
   createMarketWatchlist,
   ensureDefaultMarketWatchlist,
@@ -152,21 +153,66 @@ export function LeftSidebar({
 
   // ── Watchlist loading ──────────────────────────────────────────────────────
 
+  // One-shot reload used after writes (create / delete / save)
   const reload = useCallback(async () => {
     if (!auth?.currentUser) { setLoading(false); return; }
     try {
       await ensureDefaultMarketWatchlist(marketId as AppMarket);
       const lists = await loadMarketWatchlists(marketId as AppMarket);
       setWatchlists(lists);
-      if (lists.length > 0) setExpanded(new Set([lists[0].id]));
+      if (lists.length > 0) setExpanded((prev) => prev.size === 0 ? new Set([lists[0].id]) : prev);
     } catch (e) {
-      console.warn('[LeftSidebar] load error', e);
+      console.warn('[LeftSidebar] reload error', e);
     } finally {
       setLoading(false);
     }
   }, [marketId]);
 
-  useEffect(() => { setLoading(true); void reload(); }, [reload]);
+  // Real-time listener — keeps watchlists in sync without manual refreshes
+  useEffect(() => {
+    const uid = auth?.currentUser?.uid;
+    if (!uid || !isFirebaseConfigured || !db) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    // Ensure default watchlist exists first, then subscribe
+    void ensureDefaultMarketWatchlist(marketId as AppMarket).catch(() => {});
+
+    const col = collection(db, 'users', uid, 'watchlistsPerMarket', marketId, 'lists');
+    const q = query(col, orderBy('order', 'asc'));
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const lists: import('@/services/firebase/marketWatchlistRepository').MarketWatchlistDoc[] = snap.docs.map((d) => {
+          const data = d.data() as Record<string, unknown>;
+          return {
+            id: d.id,
+            name: typeof data.name === 'string' ? data.name : 'Unnamed',
+            market: marketId as AppMarket,
+            symbols: Array.isArray(data.symbols) ? (data.symbols as string[]) : [],
+            color: typeof data.color === 'string' ? data.color : '#f0b90b',
+            createdAt: typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString(),
+            order: typeof data.order === 'number' ? data.order : 0,
+          };
+        });
+        setWatchlists(lists);
+        setLoading(false);
+        if (lists.length > 0) {
+          setExpanded((prev) => prev.size === 0 ? new Set([lists[0].id]) : prev);
+        }
+      },
+      (error) => {
+        console.warn('[LeftSidebar] onSnapshot error', error);
+        setLoading(false);
+      }
+    );
+
+    return () => unsub();
+  }, [marketId]);
 
   // ── Search results ─────────────────────────────────────────────────────────
 

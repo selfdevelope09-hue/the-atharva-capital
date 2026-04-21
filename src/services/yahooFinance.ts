@@ -57,12 +57,42 @@ export async function fetchYahooQuote(fullSymbol: string, signal?: AbortSignal):
   }
 }
 
+const BATCH_SIZE = 3;
+const BATCH_DELAY_MS = 800;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 export async function fetchYahooBatch(fullSymbols: string[], signal?: AbortSignal): Promise<Record<string, YahooQuote>> {
   const out: Record<string, YahooQuote> = {};
-  const results = await Promise.allSettled(fullSymbols.map((s) => fetchYahooQuote(s, signal)));
-  results.forEach((r, i) => {
-    if (r.status === 'fulfilled' && r.value) out[fullSymbols[i]] = r.value;
-  });
+  const failed: string[] = [];
+
+  for (let i = 0; i < fullSymbols.length; i += BATCH_SIZE) {
+    if (signal?.aborted) break;
+    const batch = fullSymbols.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(batch.map((s) => fetchYahooQuote(s, signal)));
+    results.forEach((r, j) => {
+      if (r.status === 'fulfilled' && r.value) {
+        out[batch[j]] = r.value;
+      } else {
+        failed.push(batch[j]);
+      }
+    });
+    if (i + BATCH_SIZE < fullSymbols.length && !signal?.aborted) {
+      await sleep(BATCH_DELAY_MS);
+    }
+  }
+
+  // Retry failed symbols once
+  if (failed.length > 0 && !signal?.aborted) {
+    await sleep(BATCH_DELAY_MS);
+    const retries = await Promise.allSettled(failed.map((s) => fetchYahooQuote(s, signal)));
+    retries.forEach((r, i) => {
+      if (r.status === 'fulfilled' && r.value) out[failed[i]] = r.value;
+    });
+  }
+
   return out;
 }
 
