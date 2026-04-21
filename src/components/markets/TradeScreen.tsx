@@ -1,4 +1,5 @@
 import type { AppMarket } from '@/constants/appMarkets';
+import { SafeNativeAd } from '@/components/ads/SafeNativeAd';
 import { useLedgerStore } from '@/store/ledgerStore';
 import { useMultiMarketBalanceStore } from '@/store/multiMarketBalanceStore';
 import { useAdUxStore } from '@/store/adUxStore';
@@ -141,7 +142,11 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
         <View style={{ flex: 1, flexDirection: 'row' }}>
           <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }} style={{ flex: 1 }}>
             {chart}
+            <SafeNativeAd slotId={1} />
             <PairPicker market={market} activeTicker={ticker} />
+            <SafeNativeAd slotId={2} />
+            <SafeNativeAd slotId={3} />
+            <SafeNativeAd slotId={4} />
           </ScrollView>
           <View style={{ width: 380, borderLeftWidth: 1, borderColor: T.border, backgroundColor: T.bg0 }}>
             <ScrollView contentContainerStyle={{ padding: 16 }}>{orderPanel}</ScrollView>
@@ -151,7 +156,11 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
         <>
           <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
             {chart}
+            <SafeNativeAd slotId={1} />
             <PairPicker market={market} activeTicker={ticker} />
+            <SafeNativeAd slotId={2} />
+            <SafeNativeAd slotId={3} />
+            <SafeNativeAd slotId={4} />
           </ScrollView>
           <Pressable
             onPress={() => setSheetOpen(true)}

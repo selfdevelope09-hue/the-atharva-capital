@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
-import { BannerAd } from '@/src/components/ads/BannerAd';
+import { SafeNativeAd } from '@/components/ads/SafeNativeAd';
 import { ActiveMarketDashboard } from '@/components/ActiveMarketDashboard';
 import { DashboardIdentityHeader } from '@/components/DashboardIdentityHeader';
 import { GlobalSettingsModal } from '@/components/GlobalSettingsModal';
@@ -36,15 +36,16 @@ export default function GlobalMarketHome() {
         onOpenWatchlist={() => setIndiaWatchlistOpen(true)}
       />
 
-      {/* Top banner — above the market content */}
-      <BannerAd slot="top" />
-
       <ScrollView
         className="min-h-0 flex-1"
         nestedScrollEnabled
         contentContainerStyle={{ flexGrow: 1 }}
         showsVerticalScrollIndicator={false}>
         <DashboardIdentityHeader />
+        <View style={{ paddingHorizontal: 16, gap: 0 }}>
+          <SafeNativeAd slotId={1} />
+          <SafeNativeAd slotId={2} />
+        </View>
         <View style={{ minHeight: 420 }}>
           <ActiveMarketDashboard
             market={activeMarket}
@@ -53,9 +54,9 @@ export default function GlobalMarketHome() {
             onIndiaWatchlistOpenChange={onIndiaWatchlistOpenChange}
           />
         </View>
-        {/* Bottom banner — below the market content */}
         <View style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
-          <BannerAd slot="bottom" />
+          <SafeNativeAd slotId={3} />
+          <SafeNativeAd slotId={4} />
         </View>
       </ScrollView>
 

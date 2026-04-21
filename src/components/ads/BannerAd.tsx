@@ -1,13 +1,9 @@
 /**
- * Adsterra banner ad — web only, refreshes every 30 seconds.
+ * BannerAd — web-only banner that injects an Adsterra script into a DOM node.
+ * Returns null on iOS/Android (no ad on native = no crash).
  *
- * HOW TO ACTIVATE:
- *  1. Go to Adsterra dashboard → Sites → theatharvacapital.com
- *  2. Add Ad Format → Banner (728×90 desktop / 300×250 mobile)
- *  3. Copy the generated <script> src URL
- *  4. Replace ADSTERRA_BANNER_SRC below with that URL
- *
- * Returns null silently on iOS / Android — no mobile ad SDK needed here.
+ * SETUP: Replace ADSTERRA_BANNER_SCRIPT_URL below with your Adsterra banner tag URL
+ * from: Sites → theatharvacapital.com → Add Ad Format → Banner → Copy script src
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -15,94 +11,70 @@ import { Platform, View } from 'react-native';
 
 import { adRefreshManager } from '@/src/services/AdRefreshManager';
 
-// ─── Configure these once you have your Adsterra account set up ───────────────
-const ADSTERRA_BANNER_SRC = 'YOUR_ADSTERRA_BANNER_SCRIPT_URL';
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Replace with your Adsterra banner script URLs ───────────────────────────
+const ADSTERRA_DESKTOP_SCRIPT = ''; // e.g. '//www.topdisplayformat.com/...'
+const ADSTERRA_MOBILE_SCRIPT  = ''; // 300x250 script for mobile web
+// ────────────────────────────────────────────────────────────────────────────
 
 export interface BannerAdProps {
   slot: 'top' | 'bottom' | 'inline';
-  /** Auto-refresh interval in milliseconds. Defaults to 30 000 (30 s). */
+  /** Refresh interval in ms. Default: 30 000 */
   refreshInterval?: number;
 }
 
-function loadIntoContainer(container: HTMLElement, slot: string): void {
-  container.innerHTML = '';
-
-  if (!ADSTERRA_BANNER_SRC || ADSTERRA_BANNER_SRC === 'YOUR_ADSTERRA_BANNER_SCRIPT_URL') {
-    // Dev/unconfigured placeholder — shows a visible banner frame
-    const ph = document.createElement('div');
-    ph.style.cssText = `
-      width:100%; height:${slot === 'top' ? '90px' : '60px'};
-      background:linear-gradient(135deg,#1a1d23 0%,#161a1f 100%);
-      border:1px solid #2a2e36; border-radius:6px;
-      display:flex; align-items:center; justify-content:center;
-      font-family:system-ui,sans-serif; font-size:11px;
-      color:#4b5563; letter-spacing:1.5px; text-transform:uppercase;
-    `;
-    ph.textContent = 'Advertisement · Adsterra';
-    container.appendChild(ph);
-    return;
-  }
-
-  try {
-    const script = document.createElement('script');
-    script.async = true;
-    script.setAttribute('data-cfasync', 'false');
-    script.src = ADSTERRA_BANNER_SRC;
-    container.appendChild(script);
-  } catch {
-    // Silently ignore ad load errors — never crash the app
-  }
-}
+let _counter = 0;
 
 export function BannerAd({ slot, refreshInterval = 30_000 }: BannerAdProps) {
-  // Stable unique ID per mount (different slot instances on the same screen get unique IDs)
-  const idRef = useRef<string>('');
-  if (!idRef.current) {
-    idRef.current = `banner-${slot}-${Math.random().toString(36).slice(2, 8)}`;
-  }
+  const idRef = useRef(`banner-ad-${++_counter}`);
+
+  const loadAd = () => {
+    if (typeof document === 'undefined') return;
+    const container = document.getElementById(idRef.current);
+    if (!container) return;
+
+    // Clear previous ad content
+    container.innerHTML = '';
+
+    const scriptUrl = ADSTERRA_DESKTOP_SCRIPT || ADSTERRA_MOBILE_SCRIPT;
+    if (!scriptUrl) return; // No URL yet — renders an empty slot
+
+    try {
+      const script = document.createElement('script');
+      script.async = true;
+      script.setAttribute('data-cfasync', 'false');
+      script.src = scriptUrl;
+      container.appendChild(script);
+    } catch (e) {
+      // Never crash the app due to ad failure
+    }
+  };
 
   useEffect(() => {
-    // No-op on native — hook must be called unconditionally
     if (Platform.OS !== 'web') return;
 
-    const containerId = idRef.current;
-
-    function refresh(): void {
-      const el = document.getElementById(containerId);
-      if (el) loadIntoContainer(el, slot);
-    }
-
-    // Slight delay so the container is guaranteed to be in the DOM
-    const initTimer = setTimeout(refresh, 120);
-    adRefreshManager.startRefresh(containerId, refresh, refreshInterval);
+    loadAd();
+    adRefreshManager.startRefresh(idRef.current, loadAd, refreshInterval);
 
     return () => {
-      clearTimeout(initTimer);
-      adRefreshManager.stopRefresh(containerId);
+      adRefreshManager.stopRefresh(idRef.current);
     };
-  }, [slot, refreshInterval]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshInterval]);
 
-  // Return nothing on native
   if (Platform.OS !== 'web') return null;
 
   const minHeight = slot === 'top' ? 90 : 60;
 
   return (
     <View
+      nativeID={idRef.current}
       style={{
         width: '100%',
         minHeight,
         alignItems: 'center',
         justifyContent: 'center',
-        marginVertical: 4,
+        backgroundColor: 'transparent',
       }}
-    >
-      {/* React.createElement avoids TypeScript JSX errors for HTML elements in RN files */}
-      {React.createElement('div', {
-        id: idRef.current,
-        style: { width: '100%', textAlign: 'center' },
-      })}
-    </View>
+    />
   );
 }

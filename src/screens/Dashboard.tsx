@@ -322,6 +322,10 @@ export default function Dashboard() {
         </View>
         <MarketSelector active={marketSel} onChange={onSelChange} />
 
+        <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+          <BannerAd slot="top" />
+        </View>
+
         <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 8 }}>
           <Text style={{ color: T.text2, fontSize: 12 }}>
             Client {clientId ?? '—'} · {marketSel === 'all' ? 'All markets' : MARKETS[marketSel as MarketId].name}
@@ -354,6 +358,7 @@ export default function Dashboard() {
           <StatCard label="Fees paid" value={fmtMoney(totalFees, '$')} sub="All-in per market ccy" />
         </View>
 
+
         <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
           <Text style={{ color: T.text0, fontWeight: '800', marginBottom: 8 }}>Equity curve</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 8 }}>
@@ -384,6 +389,7 @@ export default function Dashboard() {
           <Text style={{ color: T.text0, fontWeight: '800', marginBottom: 8 }}>Calendar (realized, local ccy)</Text>
           <Heatmap daily={dailyMap} width={W} />
         </View>
+
 
         <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
           <Text style={{ color: T.text0, fontWeight: '800', marginBottom: 8 }}>Open positions</Text>
@@ -540,12 +546,16 @@ export default function Dashboard() {
             )}
           />
         </View>
-
-        {/* Bottom banner — below the trade history list */}
-        <View style={{ paddingHorizontal: 16, paddingVertical: 8 }}>
+        <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
           <BannerAd slot="bottom" />
         </View>
       </ScrollView>
+
+      {isNavRail && Platform.OS === 'web' ? (
+        <View style={{ paddingTop: 12, paddingRight: 8, width: 300 }}>
+          <BannerAd slot="inline" />
+        </View>
+      ) : null}
 
       {chartPos ? (
         <PositionChartModal

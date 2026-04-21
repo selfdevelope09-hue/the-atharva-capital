@@ -16,7 +16,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Platform, View } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -35,7 +35,6 @@ import { UnifiedMarketsPriceProvider } from '@/contexts/UnifiedMarketsPriceConte
 import { isFirebaseConfigured } from '@/config/firebaseConfig';
 import { bootFirebaseAuthAndProfile } from '@/services/firebase/bootAuth';
 import { useAppLaunchStore } from '@/store/appLaunchStore';
-import { useInterstitialUiStore } from '@/store/interstitialUiStore';
 import { useProfileStore } from '@/store/profileStore';
 import { useThemeStore } from '@/store/themeStore';
 
@@ -52,6 +51,25 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync();
 
 const WEB_SHELL_BG = '#0b0e11';
+
+/**
+ * On first mount, unregisters any previously installed service workers
+ * (e.g. legacy Monetag SW) so push-notification ads stop running.
+ * Does NOT inject any ad scripts — banners are explicit <BannerAd> components.
+ */
+function AdManager() {
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof navigator === 'undefined') return;
+    if (!('serviceWorker' in navigator)) return;
+    try {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        registrations.forEach((reg) => reg.unregister());
+      });
+    } catch { /* ignore */ }
+  }, []);
+
+  return null;
+}
 
 /**
  * Auth guard rendered inside the Expo Router tree.
@@ -102,22 +120,6 @@ export default function RootLayout() {
     if (root) {
       root.style.backgroundColor = WEB_SHELL_BG;
       root.style.minHeight = '100%';
-    }
-  }, []);
-
-  // Unregister any previously-installed service workers (cleanup from old ad integration)
-  useEffect(() => {
-    if (Platform.OS !== 'web' || typeof navigator === 'undefined') return;
-    try {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then((registrations) => {
-          registrations.forEach((reg) => {
-            reg.unregister();
-          });
-        });
-      }
-    } catch {
-      // ignore
     }
   }, []);
 
@@ -182,16 +184,15 @@ function AppContent() {
   useEffect(() => {
     if (rootLaunchIncrementedThisJsContext) return;
     rootLaunchIncrementedThisJsContext = true;
-    const n = useAppLaunchStore.getState().incrementLaunch();
-    if (n >= 3 && n % 3 === 0) {
-      useInterstitialUiStore.getState().show('launch');
-    }
+    useAppLaunchStore.getState().incrementLaunch();
   }, []);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <View style={{ flex: 1 }}>
+        {/* AuthGuard + AdManager both need to be inside the navigation context */}
         <AuthGuard />
+        <AdManager />
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="login" options={{ headerShown: false }} />

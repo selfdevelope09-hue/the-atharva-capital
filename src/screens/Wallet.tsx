@@ -5,18 +5,17 @@
 import type { AppMarket } from '@/constants/appMarkets';
 import { ALL_APP_MARKETS, TOP_UP_AMOUNT } from '@/constants/appMarkets';
 import { BannerAd } from '@/src/components/ads/BannerAd';
-import { RewardedAdButton } from '@/src/components/ads/RewardedAd';
+import { RewardedAd } from '@/src/components/ads/RewardedAd';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import Svg, { G, Path } from 'react-native-svg';
 
-import { useAdRewardsStore } from '@/store/adRewardsStore';
 import { auth, isFirebaseConfigured } from '@/config/firebaseConfig';
 import { MARKETS, type MarketId } from '@/src/constants/markets';
 import { fmtMoney, fmtPct, T } from '@/src/constants/theme';
 import { useLedgerStore } from '@/store/ledgerStore';
 import { useMultiMarketBalanceStore } from '@/store/multiMarketBalanceStore';
-import { useInterstitialUiStore } from '@/store/interstitialUiStore';
+import { useAdRewardsStore } from '@/store/adRewardsStore';
 
 function PieSlice({
   cx,
@@ -93,13 +92,19 @@ export default function Wallet() {
           FX via Frankfurter (USD base). Signed in: {isFirebaseConfigured && auth?.currentUser ? auth.currentUser.email ?? auth.currentUser.uid : 'local'}
         </Text>
 
-        {/* Watch Ad → Earn virtual cash */}
-        <View style={{ backgroundColor: T.bg1, borderRadius: T.radiusMd, borderWidth: 1, borderColor: T.border, padding: 14, marginBottom: 16 }}>
-          <Text style={{ color: T.text0, fontWeight: '800', marginBottom: 4 }}>Watch Ad → Get +$500</Text>
-          <RewardedAdButton
+        <BannerAd slot="top" />
+
+        <View style={{ backgroundColor: T.bg1, borderRadius: T.radiusMd, borderWidth: 1, borderColor: T.border, padding: 14, marginBottom: 16, gap: 10 }}>
+          <Text style={{ color: T.text0, fontWeight: '800' }}>Watch Ad → Get +$500</Text>
+          <Text style={{ color: T.text3, fontSize: 12 }}>Watch a short ad to credit your US sleeve with $500 virtual USD and unlock premium features for 24h.</Text>
+          <RewardedAd
             label="Watch Ad → Get +$500"
-            rewardDescription="Watch a short ad to credit your US sleeve with $500 virtual USD."
-            onReward={() => useAdRewardsStore.getState().addVirtualCash(500)}
+            caption="Opens ad in new tab · reward granted after 15s"
+            onReward={() => {
+              useAdRewardsStore.getState().addVirtualCash(500);
+              useAdRewardsStore.getState().grantUnlocksFromReward();
+              Alert.alert('Reward granted', '+$500 virtual USD · Premium unlocked for 24h');
+            }}
           />
         </View>
 
@@ -165,10 +170,7 @@ export default function Wallet() {
                       onPress={async () => {
                         const ok = await topUp(m, isFirebaseConfigured && !!auth?.currentUser);
                         if (!ok) Alert.alert('Top-up', 'Already used your free daily top-up for this market.');
-                        else {
-                          Alert.alert('Top-up', `+${fmtMoney(TOP_UP_AMOUNT[m], cfg.currencySymbol)} credited`);
-                          useInterstitialUiStore.getState().show('manual');
-                        }
+                        else Alert.alert('Top-up', `+${fmtMoney(TOP_UP_AMOUNT[m], cfg.currencySymbol)} credited`);
                       }}
                       style={{ flex: 1, padding: 12, backgroundColor: T.greenDim, borderRadius: 8, alignItems: 'center' }}
                     >
@@ -193,9 +195,6 @@ export default function Wallet() {
             </View>
           );
         })}
-
-        {/* Bottom banner — below the market allocation list */}
-        <BannerAd slot="bottom" />
       </ScrollView>
 
       <Modal visible={!!confirmReset} transparent animationType="fade">

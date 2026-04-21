@@ -1,6 +1,7 @@
 import Slider from '@react-native-community/slider';
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View, ViewStyle } from 'react-native';
+import { Alert, Platform, Pressable, Text, TextInput, View, ViewStyle } from 'react-native';
+import { showRewardedVideoForWalletTopUp, VIDEO_REWARD_TOPUP_USD } from '@/services/ads/VideoAdManager';
 import { MarketConfig } from '../../constants/markets';
 import { fmtMoney, FEE_DEFAULTS, T } from '../../constants/theme';
 
@@ -231,6 +232,41 @@ export function OrderForm(props: OrderFormProps) {
         {estProfit != null && <SummaryRow label="Est. profit @ TP" value={fmtMoney(estProfit, market.currencySymbol)} valueColor={estProfit >= 0 ? T.green : T.red} />}
         {estLoss != null && <SummaryRow label="Est. loss @ SL" value={fmtMoney(estLoss, market.currencySymbol)} valueColor={estLoss >= 0 ? T.green : T.red} />}
       </View>
+
+      <Pressable
+        onPress={async () => {
+          if (Platform.OS === 'web') {
+            Alert.alert('Rewarded video', 'Not available in the browser. Use the iOS or Android app for AdMob rewards.');
+            return;
+          }
+          const r = await showRewardedVideoForWalletTopUp();
+          if (r.ok) {
+            Alert.alert('Reward', `+$${VIDEO_REWARD_TOPUP_USD.toLocaleString()} virtual USD credited.`);
+          } else {
+            Alert.alert('Rewarded video', r.error ?? 'Try again on a device build with AdMob.');
+          }
+        }}
+        style={{
+          paddingVertical: 14,
+          borderRadius: T.radiusMd,
+          alignItems: 'center',
+          backgroundColor: T.bg0,
+          borderWidth: 2,
+          borderColor: T.yellow,
+          ...Platform.select({
+            ios: {
+              shadowColor: T.yellow,
+              shadowOpacity: 0.55,
+              shadowRadius: 14,
+              shadowOffset: { width: 0, height: 0 },
+            },
+            android: { elevation: 10 },
+            default: {},
+          }),
+        }}
+      >
+        <Text style={{ color: T.yellow, fontWeight: '800', fontSize: 13, letterSpacing: 0.3 }}>Watch Video to Claim $5,000</Text>
+      </Pressable>
 
       <Pressable
         onPress={() => onSubmit?.(value)}

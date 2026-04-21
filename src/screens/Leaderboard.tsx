@@ -5,9 +5,9 @@
 import type { AppMarket } from '@/constants/appMarkets';
 import { ALL_APP_MARKETS } from '@/constants/appMarkets';
 import { BannerAd } from '@/src/components/ads/BannerAd';
-import { RewardedAdButton } from '@/src/components/ads/RewardedAd';
+import { RewardedAd } from '@/src/components/ads/RewardedAd';
 import React, { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { MARKETS, type MarketId } from '@/src/constants/markets';
 import { fmtMoney, fmtPct, T } from '@/src/constants/theme';
@@ -125,11 +125,9 @@ export default function Leaderboard() {
             Advanced columns: flow toxicity, queue position, and venue-level PnL (mock).
           </Text>
           {!fullStatsUnlocked ? (
-            <RewardedAdButton
-              label="Watch Ad → See Full Leaderboard"
-              rewardDescription="Watch a short ad to unlock full stats and depth for 24 hours."
+            <RewardedAd
+              label="Watch ad · Unlock full stats 24h"
               onReward={() => useAdRewardsStore.getState().grantUnlocksFromReward()}
-              style={{ alignSelf: 'flex-start' }}
             />
           ) : (
             <Text style={{ color: T.green, fontSize: 12, fontWeight: '700' }}>Unlocked — enjoy full depth.</Text>
@@ -236,9 +234,7 @@ export default function Leaderboard() {
             </Pressable>
           );
         })}
-
-        {/* Bottom banner — below the leaderboard rows */}
-        <View style={{ paddingHorizontal: 8, paddingVertical: 8 }}>
+        <View style={{ paddingVertical: 12 }}>
           <BannerAd slot="bottom" />
         </View>
       </ScrollView>

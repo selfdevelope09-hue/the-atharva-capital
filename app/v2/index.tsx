@@ -1,8 +1,7 @@
 import { useRouter, type Href } from 'expo-router';
 import React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-
-import { BannerAd } from '@/src/components/ads/BannerAd';
+import { SafeNativeAd } from '@/components/ads/SafeNativeAd';
 import { MARKETS, MARKET_IDS } from '@/src/constants/markets';
 import { T } from '@/src/constants/theme';
 
@@ -18,8 +17,7 @@ export default function V2Hub() {
           </Text>
         </View>
 
-        {/* Top banner — above the market grid */}
-        <BannerAd slot="top" />
+        <SafeNativeAd slotId={1} />
 
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
           {MARKET_IDS.map((id) => {
@@ -59,8 +57,9 @@ export default function V2Hub() {
           })}
         </View>
 
-        {/* Bottom banner — below the market grid */}
-        <BannerAd slot="bottom" />
+        <SafeNativeAd slotId={2} />
+        <SafeNativeAd slotId={3} />
+        <SafeNativeAd slotId={4} />
       </ScrollView>
     </View>
   );

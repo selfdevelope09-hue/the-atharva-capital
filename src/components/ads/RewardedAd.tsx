@@ -1,116 +1,92 @@
 /**
- * Intentional rewarded-ad button.
+ * RewardedAd — shows a button that, when tapped by the user, opens an Adsterra
+ * direct link in a new tab and fires a reward callback after REWARD_DELAY_MS.
  *
- * The ad is shown ONLY when the user consciously taps "Watch Ad".
- * It opens the Adsterra direct link in a new tab (web) or an
- * in-app browser (native — future), then grants the reward after
- * `rewardDelayMs` ms to simulate a watched ad session.
+ * Rules:
+ *  • Only triggered by explicit user tap — NEVER auto-triggered.
+ *  • Works on web and native (native opens the URL in the system browser).
  *
- * HOW TO ACTIVATE:
- *  1. Adsterra dashboard → Direct Links → copy your link URL
- *  2. Replace ADSTERRA_DIRECT_LINK below with that URL
+ * SETUP: Replace ADSTERRA_DIRECT_LINK with your direct-link URL from
+ *        Adsterra → Sites → Direct Link.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { ActivityIndicator, Linking, Platform, Pressable, Text, View } from 'react-native';
 
-import { T } from '@/src/constants/theme';
-
-// ─── Configure once you have your Adsterra account set up ─────────────────────
-const ADSTERRA_DIRECT_LINK = 'YOUR_ADSTERRA_DIRECT_LINK';
+// ── Replace with your Adsterra Direct Link ───────────────────────────────────
+const ADSTERRA_DIRECT_LINK = ''; // e.g. 'https://www.adsterra.com/direct-link/...'
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface RewardedAdButtonProps {
-  /** CTA text shown on the button before the user taps */
+/** Time to wait after opening the ad URL before rewarding the user (ms). */
+const REWARD_DELAY_MS = 15_000;
+
+export interface RewardedAdProps {
+  /** Label shown inside the button. */
   label: string;
-  /** Short line describing what the user gets */
-  rewardDescription: string;
-  /** Called once the simulated ad watch delay elapses */
+  /** Called once, REWARD_DELAY_MS after the user taps. */
   onReward: () => void;
-  /** Milliseconds to wait before crediting reward (simulates watch time). Default 15 000. */
-  rewardDelayMs?: number;
-  style?: object;
+  /** Optional secondary caption below the button. */
+  caption?: string;
 }
 
-export function RewardedAdButton({
-  label,
-  rewardDescription,
-  onReward,
-  rewardDelayMs = 15_000,
-  style,
-}: RewardedAdButtonProps) {
+export function RewardedAd({ label, onReward, caption }: RewardedAdProps) {
   const [waiting, setWaiting] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(0);
-  const rewardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [done, setDone] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Decrement countdown every second while waiting
-  useEffect(() => {
-    if (!waiting || secondsLeft <= 0) return;
-    countdownRef.current = setInterval(() => {
-      setSecondsLeft((s) => Math.max(0, s - 1));
-    }, 1_000);
-    return () => {
-      if (countdownRef.current) clearInterval(countdownRef.current);
-    };
-  }, [waiting, secondsLeft]);
+  const handlePress = () => {
+    if (waiting || done) return;
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (rewardTimerRef.current) clearTimeout(rewardTimerRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
-    };
-  }, []);
-
-  function handlePress(): void {
-    if (waiting) return;
-
-    // Open Adsterra direct link in a new tab (user intentionally clicked)
-    if (typeof window !== 'undefined' && ADSTERRA_DIRECT_LINK !== 'YOUR_ADSTERRA_DIRECT_LINK') {
-      try {
-        window.open(ADSTERRA_DIRECT_LINK, '_blank', 'noopener,noreferrer');
-      } catch {
-        // Ignore popup blockers
+    const url = ADSTERRA_DIRECT_LINK;
+    if (url) {
+      if (Platform.OS === 'web') {
+        try { window.open(url, '_blank', 'noopener,noreferrer'); } catch { /* ignore */ }
+      } else {
+        void Linking.openURL(url);
       }
     }
 
-    const delaySec = Math.ceil(rewardDelayMs / 1_000);
     setWaiting(true);
-    setSecondsLeft(delaySec);
-
-    rewardTimerRef.current = setTimeout(() => {
+    timerRef.current = setTimeout(() => {
       setWaiting(false);
-      setSecondsLeft(0);
-      try {
-        onReward();
-      } catch {
-        // Reward callback errors must not crash the UI
-      }
-    }, rewardDelayMs);
+      setDone(true);
+      try { onReward(); } catch { /* ignore */ }
+    }, REWARD_DELAY_MS);
+  };
+
+  if (done) {
+    return (
+      <View style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1a2e1a' }}>
+        <Text style={{ color: '#00C805', fontWeight: '800', fontSize: 12 }}>Reward granted!</Text>
+      </View>
+    );
   }
 
   return (
-    <View style={[{ gap: 8 }, style]}>
-      <Text style={{ color: T.text3, fontSize: 12 }}>{rewardDescription}</Text>
+    <View>
       <Pressable
         onPress={handlePress}
         disabled={waiting}
         style={{
-          backgroundColor: waiting ? T.bg2 : T.yellow,
-          paddingVertical: 14,
-          paddingHorizontal: 20,
-          borderRadius: 8,
+          alignSelf: 'flex-start',
+          flexDirection: 'row',
           alignItems: 'center',
-          borderWidth: waiting ? 1 : 0,
-          borderColor: T.yellow,
-          opacity: waiting ? 0.85 : 1,
+          gap: 8,
+          backgroundColor: '#f0b90b',
+          paddingHorizontal: 14,
+          paddingVertical: 10,
+          borderRadius: 8,
+          opacity: waiting ? 0.7 : 1,
         }}
       >
-        <Text style={{ color: waiting ? T.yellow : '#000', fontWeight: '800', fontSize: 13 }}>
-          {waiting ? `Crediting in ${secondsLeft}s…` : label}
+        {waiting && <ActivityIndicator size="small" color="#000" />}
+        <Text style={{ color: '#000', fontWeight: '800', fontSize: 12 }}>
+          {waiting ? 'Watching…' : label}
         </Text>
       </Pressable>
+      {caption && !waiting ? (
+        <Text style={{ color: '#7b8390', fontSize: 11, marginTop: 4 }}>{caption}</Text>
+      ) : null}
     </View>
   );
 }

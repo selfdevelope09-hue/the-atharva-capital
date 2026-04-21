@@ -4,7 +4,7 @@
  */
 
 import { BannerAd } from '@/src/components/ads/BannerAd';
-import { RewardedAdButton } from '@/src/components/ads/RewardedAd';
+import { runRewardedForCashAndUnlocks } from '@/services/ads/RewardedAds';
 import { useRouter, type Href } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -461,12 +461,18 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
           <Text style={{ color: T.text2, fontSize: 13, marginTop: 12, textAlign: 'center' }}>
             Switzerland & Germany venues require a quick rewarded unlock (24h).
           </Text>
-          <RewardedAdButton
-            label="Watch Ad → Unlock 24h"
-            rewardDescription="Switzerland & Germany venues require a rewarded unlock."
-            onReward={() => useAdRewardsStore.getState().grantUnlocksFromReward()}
-            style={{ marginTop: 20 }}
-          />
+          <Pressable
+            onPress={() => void runRewardedForCashAndUnlocks()}
+            style={{
+              marginTop: 20,
+              backgroundColor: T.yellow,
+              paddingVertical: 14,
+              borderRadius: T.radiusMd,
+              alignItems: 'center',
+            }}
+          >
+            <Text style={{ color: '#000', fontWeight: '800' }}>Watch ad to unlock 24h</Text>
+          </Pressable>
           <Pressable onPress={() => router.replace('/v2' as Href)} style={{ marginTop: 16, alignItems: 'center' }}>
             <Text style={{ color: T.text3, fontSize: 13 }}>Back to markets</Text>
           </Pressable>
@@ -518,6 +524,10 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
           </View>
         </View>
 
+        <View style={{ paddingHorizontal: 16 }}>
+          <BannerAd slot="top" />
+        </View>
+
         <View style={{ backgroundColor: T.bg0, paddingBottom: 8 }}>
           <ScrollView
             horizontal
@@ -545,6 +555,7 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
             })}
           </ScrollView>
         </View>
+
 
         {tab !== 'watchlists' ? (
           <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
@@ -579,12 +590,11 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
                 return (
                   <React.Fragment key={row.full}>
                     <StockCard row={row} routeTicker={routeTicker} displaySymbol={displaySymbol} />
+                    {(i + 1) % 8 === 0 && <BannerAd slot="inline" />}
                   </React.Fragment>
                 );
               })
             )}
-            {/* Bottom banner — below the symbol list */}
-            <BannerAd slot="bottom" />
           </View>
         ) : (
           <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
@@ -681,8 +691,6 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
                 })}
               </View>
             )}
-            {/* Bottom banner — below the watchlists */}
-            <BannerAd slot="bottom" />
           </View>
         )}
       </ScrollView>
