@@ -3,8 +3,8 @@ import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-nati
 
 import { NativeAdSlot } from '@/components/NativeAdCard';
 import { UniversalChart, type UniversalChartBar } from '@/components/UniversalChart';
-import { fetchFmpQuoteShort, type FmpQuoteShortRow } from '@/services/api/fmpClient';
-import { useMarketStore } from '@/store/marketStore';
+import { fetchYahooBatch, type YahooQuote } from '@/src/services/yahooFinance';
+import { calcChangePct } from '@/src/services/MarketDataService';
 import { useWalletStore } from '@/store/walletStore';
 
 const ACCENT = '#bf0000';
@@ -74,33 +74,26 @@ function OrderBookColumn({ side }: { side: 'sell' | 'buy' }) {
 export function JapaneseMarketDashboard() {
   const formatBaseUsdAsJpy = useWalletStore((s) => s.formatBaseUsdAsJpy);
   const usdToJpy = useWalletStore((s) => s.usdToJpy);
-  const mergeLiveQuote = useMarketStore((s) => s.mergeLiveQuote);
-  const [quotes, setQuotes] = useState<Record<string, FmpQuoteShortRow>>({});
+  const [quotes, setQuotes] = useState<Record<string, YahooQuote>>({});
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const chartData = useMemo(() => buildDemoCandles(90, 7), []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    setErr(null);
     try {
-      const rows = await fetchFmpQuoteShort(WATCHLIST.map((w) => w.symbol));
-      const map: Record<string, FmpQuoteShortRow> = {};
-      rows.forEach((r) => {
-        map[r.symbol] = r;
-        mergeLiveQuote(r.symbol, r.price, Number(r.changesPercentage ?? 0), 'FMP');
-      });
+      const map = await fetchYahooBatch(WATCHLIST.map((w) => w.symbol));
       setQuotes(map);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Quote fetch failed');
-      setQuotes({});
+    } catch {
+      // keep previous quotes on error
     } finally {
       setLoading(false);
     }
-  }, [mergeLiveQuote]);
+  }, []);
 
   useEffect(() => {
     void refresh();
+    const t = setInterval(() => void refresh(), 15_000);
+    return () => clearInterval(t);
   }, [refresh]);
 
   return (
@@ -123,9 +116,6 @@ export function JapaneseMarketDashboard() {
           </Pressable>
         </View>
         {loading ? <ActivityIndicator className="mt-2" color="#888" /> : null}
-        {err ? (
-          <Text className="mt-1 text-[9px] text-amber-500/90">FMP: {err} — 気配値はモックです。</Text>
-        ) : null}
       </View>
 
       <View className="border-b px-1 py-1" style={{ borderColor: LINE, backgroundColor: '#08090b' }}>
@@ -140,7 +130,7 @@ export function JapaneseMarketDashboard() {
           {WATCHLIST.map((w) => {
             const q = quotes[w.symbol];
             const price = q?.price ?? w.mockPrice;
-            const pct = q?.changesPercentage ?? w.mockPct;
+            const pct = calcChangePct(q, w.mockPct);
             const up = pct >= 0;
             return (
               <View key={w.symbol} className="flex-row border-b px-1 py-1" style={{ borderColor: LINE }}>

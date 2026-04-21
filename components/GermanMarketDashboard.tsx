@@ -3,8 +3,8 @@ import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } fr
 
 import { NativeAdSlot } from '@/components/NativeAdCard';
 import { UniversalChart, type UniversalChartBar } from '@/components/UniversalChart';
-import { fetchFmpQuoteShort, type FmpQuoteShortRow } from '@/services/api/fmpClient';
-import { useMarketStore } from '@/store/marketStore';
+import { fetchYahooBatch, type YahooQuote } from '@/src/services/yahooFinance';
+import { calcChangePct } from '@/src/services/MarketDataService';
 import { useWalletStore } from '@/store/walletStore';
 
 type WatchRow = { symbol: string; name: string; mock: number; mockPct: number };
@@ -38,33 +38,26 @@ export function GermanMarketDashboard() {
   const { width: screenW } = useWindowDimensions();
   const formatBaseUsdAsEur = useWalletStore((s) => s.formatBaseUsdAsEur);
   const usdToEur = useWalletStore((s) => s.usdToEur);
-  const mergeLiveQuote = useMarketStore((s) => s.mergeLiveQuote);
-  const [quotes, setQuotes] = useState<Record<string, FmpQuoteShortRow>>({});
+  const [quotes, setQuotes] = useState<Record<string, YahooQuote>>({});
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const chartData = useMemo(() => buildDemoCandles(78, 19), []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    setErr(null);
     try {
-      const rows = await fetchFmpQuoteShort(WATCHLIST.map((w) => w.symbol));
-      const map: Record<string, FmpQuoteShortRow> = {};
-      rows.forEach((r) => {
-        map[r.symbol] = r;
-        mergeLiveQuote(r.symbol, r.price, Number(r.changesPercentage ?? 0), 'FMP');
-      });
+      const map = await fetchYahooBatch(WATCHLIST.map((w) => w.symbol));
       setQuotes(map);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'FMP failed');
-      setQuotes({});
+    } catch {
+      // keep previous quotes on error
     } finally {
       setLoading(false);
     }
-  }, [mergeLiveQuote]);
+  }, []);
 
   useEffect(() => {
     void refresh();
+    const t = setInterval(() => void refresh(), 15_000);
+    return () => clearInterval(t);
   }, [refresh]);
 
   return (
@@ -93,9 +86,6 @@ export function GermanMarketDashboard() {
         </Pressable>
       </View>
 
-      {err ? (
-        <Text className="mt-2 px-6 text-center text-xs text-neutral-600">{err} — mock rows.</Text>
-      ) : null}
 
       <View className="mt-12">
         <Text className="mb-4 px-6 text-[11px] font-medium uppercase tracking-widest text-neutral-600">
@@ -104,7 +94,7 @@ export function GermanMarketDashboard() {
         {WATCHLIST.flatMap((w, index) => {
           const q = quotes[w.symbol];
           const px = q?.price ?? w.mock;
-          const pct = q?.changesPercentage ?? w.mockPct;
+          const pct = calcChangePct(q, w.mockPct);
           const up = pct >= 0;
           const row = (
             <View key={w.symbol} style={styles.rowHairline}>

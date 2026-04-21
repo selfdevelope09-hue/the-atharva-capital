@@ -11,8 +11,8 @@ import Svg, { Path } from 'react-native-svg';
 
 import { NativeAdSlot } from '@/components/NativeAdCard';
 import { UniversalChart, type UniversalChartBar } from '@/components/UniversalChart';
-import { fetchFmpQuoteShort, type FmpQuoteShortRow } from '@/services/api/fmpClient';
-import { useMarketStore } from '@/store/marketStore';
+import { fetchYahooBatch, type YahooQuote } from '@/src/services/yahooFinance';
+import { calcChangePct } from '@/src/services/MarketDataService';
 import { useWalletStore } from '@/store/walletStore';
 
 const BG = '#06060a';
@@ -151,10 +151,8 @@ type UKMarketDashboardProps = {
 export function UKMarketDashboard({ isWide }: UKMarketDashboardProps) {
   const formatBaseUsdAsGbp = useWalletStore((s) => s.formatBaseUsdAsGbp);
   const usdToGbp = useWalletStore((s) => s.usdToGbp);
-  const mergeLiveQuote = useMarketStore((s) => s.mergeLiveQuote);
-  const [quotes, setQuotes] = useState<Record<string, FmpQuoteShortRow>>({});
+  const [quotes, setQuotes] = useState<Record<string, YahooQuote>>({});
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const [chartSymbol, setChartSymbol] = useState<string | null>(null);
 
   const chartData = useMemo(
@@ -171,26 +169,20 @@ export function UKMarketDashboard({ isWide }: UKMarketDashboardProps) {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    setErr(null);
     try {
-      const syms = WATCHLIST.map((w) => w.symbol);
-      const rows = await fetchFmpQuoteShort(syms);
-      const map: Record<string, FmpQuoteShortRow> = {};
-      rows.forEach((r) => {
-        map[r.symbol] = r;
-        mergeLiveQuote(r.symbol, r.price, Number(r.changesPercentage ?? 0), 'FMP');
-      });
+      const map = await fetchYahooBatch(WATCHLIST.map((w) => w.symbol));
       setQuotes(map);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'FMP request failed');
-      setQuotes({});
+    } catch {
+      // keep previous quotes on error
     } finally {
       setLoading(false);
     }
-  }, [mergeLiveQuote]);
+  }, []);
 
   useEffect(() => {
     void refresh();
+    const t = setInterval(() => void refresh(), 15_000);
+    return () => clearInterval(t);
   }, [refresh]);
 
   const chartPanel = chartSymbol ? (
@@ -284,13 +276,10 @@ export function UKMarketDashboard({ isWide }: UKMarketDashboardProps) {
       <Text className="mb-2 text-base font-black text-white">LSE watchlist</Text>
       <View className="rounded-3xl border p-2" style={{ borderColor: LINE, backgroundColor: CARD }}>
         {loading ? <ActivityIndicator className="py-4" color={NEON_BLUE} /> : null}
-        {err ? (
-          <Text className="px-2 py-2 text-center text-xs text-amber-400/90">{err} — mock prices shown.</Text>
-        ) : null}
         {WATCHLIST.map((w) => {
           const q = quotes[w.symbol];
           const px = q?.price ?? w.mock;
-          const pct = q?.changesPercentage ?? w.mockPct;
+          const pct = calcChangePct(q, w.mockPct);
           const up = pct >= 0;
           return (
             <Pressable
@@ -324,7 +313,7 @@ export function UKMarketDashboard({ isWide }: UKMarketDashboardProps) {
         className="mt-6 self-center rounded-full border px-6 py-3 active:opacity-90"
         style={{ borderColor: NEON_ORANGE, backgroundColor: 'rgba(255,122,24,0.12)' }}>
         <Text className="text-sm font-black" style={{ color: NEON_ORANGE }}>
-          Refresh quotes (FMP)
+          Refresh live prices
         </Text>
       </Pressable>
     </ScrollView>

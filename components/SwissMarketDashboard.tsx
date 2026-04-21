@@ -10,8 +10,8 @@ import {
 
 import { NativeAdSlot } from '@/components/NativeAdCard';
 import { UniversalChart, type UniversalChartBar } from '@/components/UniversalChart';
-import { fetchFmpQuoteShort, type FmpQuoteShortRow } from '@/services/api/fmpClient';
-import { useMarketStore } from '@/store/marketStore';
+import { fetchYahooBatch, type YahooQuote } from '@/src/services/yahooFinance';
+import { calcChangePct } from '@/src/services/MarketDataService';
 import { useWalletStore } from '@/store/walletStore';
 
 /** Swissquote-inspired: institutional navy, crisp white copy, sharp card borders — SIX */
@@ -81,34 +81,27 @@ type SwissMarketDashboardProps = {
 export function SwissMarketDashboard({ isWide }: SwissMarketDashboardProps) {
   const formatBaseUsdAsChf = useWalletStore((s) => s.formatBaseUsdAsChf);
   const usdToChf = useWalletStore((s) => s.usdToChf);
-  const mergeLiveQuote = useMarketStore((s) => s.mergeLiveQuote);
-  const [quotes, setQuotes] = useState<Record<string, FmpQuoteShortRow>>({});
+  const [quotes, setQuotes] = useState<Record<string, YahooQuote>>({});
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const [symbol, setSymbol] = useState('NESN.SW');
   const chartData = useMemo(() => buildDemoCandles(96, 41), []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    setErr(null);
     try {
-      const rows = await fetchFmpQuoteShort(WATCHLIST.map((w) => w.symbol));
-      const map: Record<string, FmpQuoteShortRow> = {};
-      rows.forEach((r) => {
-        map[r.symbol] = r;
-        mergeLiveQuote(r.symbol, r.price, Number(r.changesPercentage ?? 0), 'FMP');
-      });
+      const map = await fetchYahooBatch(WATCHLIST.map((w) => w.symbol));
       setQuotes(map);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'FMP failed');
-      setQuotes({});
+    } catch {
+      // keep previous quotes on error
     } finally {
       setLoading(false);
     }
-  }, [mergeLiveQuote]);
+  }, []);
 
   useEffect(() => {
     void refresh();
+    const t = setInterval(() => void refresh(), 15_000);
+    return () => clearInterval(t);
   }, [refresh]);
 
   const balanceBlock = (
@@ -277,16 +270,11 @@ export function SwissMarketDashboard({ isWide }: SwissMarketDashboardProps) {
           <Text className="text-xs font-semibold text-slate-200">{loading ? '…' : 'Refresh'}</Text>
         </Pressable>
       </View>
-      {err ? (
-        <Text className="mb-3 text-xs" style={{ color: '#fca5a5' }}>
-          {err} — showing mock prices.
-        </Text>
-      ) : null}
       {loading ? <ActivityIndicator color={GOLD} style={{ marginBottom: 16 }} /> : null}
       {WATCHLIST.map((w) => {
         const q = quotes[w.symbol];
         const px = q?.price ?? w.mock;
-        const pct = q?.changesPercentage ?? w.mockPct;
+        const pct = calcChangePct(q, w.mockPct);
         const up = pct >= 0;
         return (
           <View

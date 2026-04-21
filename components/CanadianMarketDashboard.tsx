@@ -9,8 +9,8 @@ import {
 
 import { NativeAdSlot } from '@/components/NativeAdCard';
 import { UniversalChart, type UniversalChartBar } from '@/components/UniversalChart';
-import { fetchFmpQuoteShort, type FmpQuoteShortRow } from '@/services/api/fmpClient';
-import { useMarketStore } from '@/store/marketStore';
+import { fetchYahooBatch, type YahooQuote } from '@/src/services/yahooFinance';
+import { calcChangePct } from '@/src/services/MarketDataService';
 import { useWalletStore } from '@/store/walletStore';
 
 /** Wealthsimple-inspired: soft pastels, generous radius, calm typography */
@@ -48,33 +48,26 @@ function buildDemoCandles(barCount: number, seed: number): UniversalChartBar[] {
 export function CanadianMarketDashboard() {
   const formatBaseUsdAsCad = useWalletStore((s) => s.formatBaseUsdAsCad);
   const usdToCad = useWalletStore((s) => s.usdToCad);
-  const mergeLiveQuote = useMarketStore((s) => s.mergeLiveQuote);
-  const [quotes, setQuotes] = useState<Record<string, FmpQuoteShortRow>>({});
+  const [quotes, setQuotes] = useState<Record<string, YahooQuote>>({});
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const chartData = useMemo(() => buildDemoCandles(88, 23), []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    setErr(null);
     try {
-      const rows = await fetchFmpQuoteShort(WATCHLIST.map((w) => w.symbol));
-      const map: Record<string, FmpQuoteShortRow> = {};
-      rows.forEach((r) => {
-        map[r.symbol] = r;
-        mergeLiveQuote(r.symbol, r.price, Number(r.changesPercentage ?? 0), 'FMP');
-      });
+      const map = await fetchYahooBatch(WATCHLIST.map((w) => w.symbol));
       setQuotes(map);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'FMP failed');
-      setQuotes({});
+    } catch {
+      // keep previous quotes on error
     } finally {
       setLoading(false);
     }
-  }, [mergeLiveQuote]);
+  }, []);
 
   useEffect(() => {
     void refresh();
+    const t = setInterval(() => void refresh(), 15_000);
+    return () => clearInterval(t);
   }, [refresh]);
 
   return (
@@ -120,13 +113,12 @@ export function CanadianMarketDashboard() {
             </Text>
           </Pressable>
         </View>
-        {err ? <Text className="mb-2 text-sm text-amber-200/80">{err} — mock prices.</Text> : null}
         {loading ? <ActivityIndicator color={LEMON} className="mb-4" /> : null}
 
         {WATCHLIST.map((w) => {
           const q = quotes[w.symbol];
           const px = q?.price ?? w.mock;
-          const pct = q?.changesPercentage ?? w.mockPct;
+          const pct = calcChangePct(q, w.mockPct);
           const up = pct >= 0;
           return (
             <View
