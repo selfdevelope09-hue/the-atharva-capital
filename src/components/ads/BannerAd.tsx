@@ -34,17 +34,18 @@ export function BannerAd({ slot = 'bottom', refreshInterval = 30_000 }: BannerAd
     const container = document.getElementById(containerId);
     if (!container) return;
 
-    // Build the exact AADS iframe HTML as specified
-    container.innerHTML = `
-      <div id="frame" style="width:100%;margin:auto;position:relative;z-index:99998;">
-        <iframe
-          data-aa="2435144"
-          src="//acceptable.a-ads.com/2435144/?size=Adaptive&t=${Date.now()}"
-          style="border:0;padding:0;width:70%;height:auto;overflow:hidden;display:block;margin:auto;"
-          scrolling="no"
-          allow="autoplay"
-        ></iframe>
-      </div>`;
+    // Build the AADS iframe safely using DOM APIs (no innerHTML string)
+    container.innerHTML = '';
+    const frame = document.createElement('div');
+    frame.style.cssText = 'width:100%;margin:auto;position:relative;z-index:1';
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('data-aa', '2435144');
+    iframe.src = `//acceptable.a-ads.com/2435144/?size=Adaptive&t=${Date.now()}`;
+    iframe.style.cssText = 'border:0;padding:0;width:70%;height:auto;overflow:hidden;display:block;margin:auto;pointer-events:auto';
+    iframe.setAttribute('scrolling', 'no');
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
+    frame.appendChild(iframe);
+    container.appendChild(frame);
   };
 
   const refreshAd = () => {

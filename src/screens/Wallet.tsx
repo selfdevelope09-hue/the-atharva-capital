@@ -9,6 +9,7 @@ import { RewardedAd } from '@/src/components/ads/RewardedAd';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import Svg, { G, Path } from 'react-native-svg';
+import { useRouter } from 'expo-router';
 
 import { auth, isFirebaseConfigured } from '@/config/firebaseConfig';
 import { MARKETS, type MarketId } from '@/src/constants/markets';
@@ -42,6 +43,7 @@ function PieSlice({
 }
 
 export default function Wallet() {
+  const router = useRouter();
   const balances = useMultiMarketBalanceStore((s) => s.balances);
   const rates = useMultiMarketBalanceStore((s) => s.usdRates);
   const refreshFx = useMultiMarketBalanceStore((s) => s.refreshFx);
@@ -167,14 +169,20 @@ export default function Wallet() {
                   </Text>
                   <View style={{ flexDirection: 'row', gap: 10 }}>
                     <Pressable
+                      onPress={() => router.push(`/topup/${m}` as never)}
+                      style={{ flex: 1, padding: 12, backgroundColor: 'rgba(240,185,11,0.1)', borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: T.yellow }}
+                    >
+                      <Text style={{ color: T.yellow, fontWeight: '800' }}>💰 Top Up</Text>
+                    </Pressable>
+                    <Pressable
                       onPress={async () => {
                         const ok = await topUp(m, isFirebaseConfigured && !!auth?.currentUser);
-                        if (!ok) Alert.alert('Top-up', 'Already used your free daily top-up for this market.');
-                        else Alert.alert('Top-up', `+${fmtMoney(TOP_UP_AMOUNT[m], cfg.currencySymbol)} credited`);
+                        if (!ok) Alert.alert('Free Top-up', 'Already used your free daily top-up for this market.');
+                        else Alert.alert('Free Top-up', `+${fmtMoney(TOP_UP_AMOUNT[m], cfg.currencySymbol)} credited`);
                       }}
                       style={{ flex: 1, padding: 12, backgroundColor: T.greenDim, borderRadius: 8, alignItems: 'center' }}
                     >
-                      <Text style={{ color: T.green, fontWeight: '800' }}>Top-up (+10k/day)</Text>
+                      <Text style={{ color: T.green, fontWeight: '800' }}>Free (+10k/day)</Text>
                     </Pressable>
                     <Pressable
                       onPress={() => setConfirmReset(m)}

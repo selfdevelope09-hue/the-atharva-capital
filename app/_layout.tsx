@@ -54,16 +54,17 @@ const WEB_SHELL_BG = '#0b0e11';
 
 /**
  * AdManager — runs once on first web mount.
+ * Only unregisters legacy service workers — NO popunder/onclick scripts.
  *
- * 1. Unregisters any previously installed service workers (legacy Monetag SW push ads).
- * 2. Injects Monetag native-banner script (zone 232062) — non-intrusive strip only.
- *    No popups, no push notifications, no onclick/popunder.
+ * REMOVED: Monetag zone 232062 script (quge5.com/88/tag.min.js) — it was
+ * injecting a popunder handler that hijacked all page clicks (onclick/onmousedown).
+ * Keeping ONLY the AADS iframe banner (#2435144) which is safe.
  */
 function AdManager() {
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
 
-    // ── Step 1: unregister legacy push-ad service workers ─────────────────────
+    // Unregister any legacy push-ad service workers
     if ('serviceWorker' in navigator) {
       try {
         navigator.serviceWorker.getRegistrations().then((regs) => {
@@ -72,19 +73,17 @@ function AdManager() {
       } catch { /* ignore */ }
     }
 
-    // ── Step 2: Monetag native-banner (zone 232062) ────────────────────────────
-    // Only inject once — guard against HMR double-mount
-    if (document.getElementById('monetag-native-script')) return;
+    // Defensively remove any existing onclick hijack that may have been set
+    // by a previously loaded Monetag popunder script
     try {
-      const script = document.createElement('script');
-      script.id = 'monetag-native-script';
-      // Monetag zone tag — renders native banner placeholders in .monetag-banner divs
-      script.src = 'https://quge5.com/88/tag.min.js';
-      script.setAttribute('data-zone', '232062');
-      script.async = true;
-      script.setAttribute('data-cfasync', 'false');
-      document.head.appendChild(script);
-    } catch { /* never crash for ads */ }
+      if (document.getElementById('monetag-native-script')) {
+        document.getElementById('monetag-native-script')?.remove();
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((window as any).onclick) { (window as any).onclick = null; }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((document as any).onclick) { (document as any).onclick = null; }
+    } catch { /* ignore */ }
   }, []);
 
   return null;

@@ -15,6 +15,7 @@ import { T, fmtMoney, fmtPct } from '@/src/constants/theme';
 import { useMarketSubscribe, useTick } from '@/src/contexts/MarketPriceContext';
 import { fetchYahooQuote } from '@/src/services/yahooFinance';
 import { BannerAd } from '@/src/components/ads/BannerAd';
+import { TopNavBar } from '@/src/components/layout/TopNavBar';
 import { useLedgerStore } from '@/store/ledgerStore';
 import { useMultiMarketBalanceStore } from '@/store/multiMarketBalanceStore';
 
@@ -182,6 +183,9 @@ export default function MarketsHub() {
     <View style={{ flex: 1, backgroundColor: T.bg0 }}>
       {/* Only subscribe to crypto WebSocket — Yahoo markets fetched separately */}
       <CryptoSubscriber />
+
+      {/* Mobile top navbar with profile avatar */}
+      {Platform.OS === 'web' && width < 1024 && <TopNavBar />}
 
       <ScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: 48, gap: 16 }}

@@ -1,17 +1,14 @@
 /**
- * MonetagBanner — renders a Monetag native-banner placeholder div.
+ * MonetagBanner — leaderboard-only native banner / video zone placeholder.
  *
- * Monetag's tag.min.js (zone 232062, injected in _layout.tsx) scans the DOM
- * for `.monetag-banner` divs and fills them with native ads automatically.
+ * Uses DOM injection via useEffect (NOT raw JSX HTML elements) to avoid
+ * the "H is not a function" crash in React Native Web minified builds.
  *
- * Placement rules (STRICT — do not move these):
- *   ✅ Below main navbar (strip)
- *   ✅ After every 3 rows in leaderboard
- *   ✅ Footer area of market pages
- *   ✅ Top of each leaderboard tab (video zone)
- *   ❌ NEVER inside chart container
- *   ❌ NEVER overlapping trade/order panels
- *   ❌ No popups, no push notifications
+ * RULES:
+ *   ✅ Native banners: after every 3 rows in leaderboard
+ *   ✅ Video zone: top of each leaderboard tab ONLY
+ *   ❌ NEVER inside chart, order panels, or any other page
+ *   ❌ NO autoplay, NO redirect, NO popunder, NO onclick hijack
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -27,42 +24,41 @@ interface MonetagBannerProps {
 let _mid = 0;
 
 export function MonetagBanner({ variant = 'native', style }: MonetagBannerProps) {
-  const id = useRef(`mtg-${variant}-${++_mid}`).current;
+  const ref = useRef<View>(null);
+  const divId = useRef(`mtg-${variant}-${++_mid}`).current;
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-    const el = document.getElementById(id);
-    if (!el) return;
-    // Signal to Monetag script to fill this slot
-    el.setAttribute('data-zone', '232062');
-    el.setAttribute('data-type', variant === 'video' ? 'video' : 'native');
-    // Trigger a re-scan if the script already ran
-    if (typeof (window as unknown as Record<string, unknown>).__monetag === 'function') {
-      try { (window as unknown as Record<string, unknown>).__monetag(); } catch { /* ok */ }
-    }
-  }, [id, variant]);
+
+    const node = ref.current as unknown as HTMLElement | null;
+    if (!node) return;
+
+    const div = document.createElement('div');
+    div.id = divId;
+    div.className = 'monetag-banner';
+    div.style.cssText = `width:100%;min-height:${variant === 'video' ? 100 : 60}px`;
+
+    // NOTE: We do NOT call any Monetag JS here — the script was removed because
+    // zone 232062 was a popunder. These divs are kept as visual placeholders only.
+    // Replace zone ID with a safe native-only zone if needed in future.
+
+    node.appendChild(div);
+    return () => { try { node.removeChild(div); } catch { /* ignore */ } };
+  }, [divId, variant]);
 
   if (Platform.OS !== 'web') return null;
 
   return (
     <View
+      ref={ref}
       style={[
         {
           width: '100%',
           minHeight: variant === 'video' ? 100 : 60,
           backgroundColor: 'transparent',
-          alignItems: 'center',
-          justifyContent: 'center',
         },
         style,
       ]}
-    >
-      {/* @ts-ignore — web-only div */}
-      <div
-        id={id}
-        className="monetag-banner"
-        style={{ width: '100%', minHeight: variant === 'video' ? 100 : 60 }}
-      />
-    </View>
+    />
   );
 }

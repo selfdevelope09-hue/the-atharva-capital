@@ -28,7 +28,7 @@ import {
 } from 'react-native';
 
 import { auth, db, isFirebaseConfigured } from '@/config/firebaseConfig';
-import { AadsBanner } from '@/src/components/ads/AadsBanner';
+import { BannerAd } from '@/src/components/ads/BannerAd';
 import { getOrCreateConversation } from '@/services/firebase/chatRepository';
 import { T } from '@/src/constants/theme';
 import { useProfileStore } from '@/store/profileStore';
@@ -46,46 +46,54 @@ interface LBEntry {
   winRate: number;
 }
 
-// ── Monetag banner injected safely via DOM ────────────────────────────────────
-function MonetagBanner({ slotId }: { slotId: string }) {
+// ── Inline ad banner (AADS) between leaderboard rows ─────────────────────────
+function InlineBanner({ slotId }: { slotId: string }) {
   const ref = useRef<View>(null);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     const node = ref.current as unknown as HTMLElement | null;
     if (!node) return;
-    const div = document.createElement('div');
-    div.className = 'monetag-banner';
-    div.setAttribute('data-zone', '232062');
-    div.id = `monetag-lb-${slotId}`;
-    div.style.cssText = 'min-height:60px;width:100%';
-    node.appendChild(div);
-    return () => { try { node.removeChild(div); } catch { /* ignore */ } };
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('data-aa', '2435144');
+    iframe.src = `//acceptable.a-ads.com/2435144/?size=Adaptive&t=${Date.now() + Math.random()}`;
+    iframe.style.cssText = 'border:0;width:100%;height:60px;overflow:hidden;display:block;pointer-events:auto';
+    iframe.setAttribute('scrolling', 'no');
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
+    node.appendChild(iframe);
+    return () => { try { node.removeChild(iframe); } catch { /* ignore */ } };
   }, [slotId]);
 
   if (Platform.OS !== 'web') return null;
-  return <View ref={ref} style={{ width: '100%', minHeight: 60, marginVertical: 4 }} />;
+  return <View ref={ref} style={{ width: '100%', height: 60, marginVertical: 4 }} />;
 }
 
-// ── Monetag video zone ────────────────────────────────────────────────────────
-function MonetagVideoZone({ market }: { market: string }) {
+// ── Ad zone at top of each tab — uses AADS (no popunder script needed) ─────────
+function TabAdZone() {
   const ref = useRef<View>(null);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     const node = ref.current as unknown as HTMLElement | null;
     if (!node) return;
-    const div = document.createElement('div');
-    div.id = `monetag-video-${market}`;
-    div.setAttribute('data-zone', '232062');
-    div.setAttribute('data-type', 'video');
-    div.style.cssText = 'min-height:90px;width:100%;background:transparent';
-    node.appendChild(div);
-    return () => { try { node.removeChild(div); } catch { /* ignore */ } };
-  }, [market]);
+    const label = document.createElement('p');
+    label.textContent = 'Advertisement';
+    label.style.cssText = 'color:#555;font-size:11px;text-align:right;margin:0 0 4px;padding:0';
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('data-aa', '2435144');
+    iframe.src = `//acceptable.a-ads.com/2435144/?size=Adaptive&t=${Date.now()}`;
+    iframe.style.cssText = 'border:0;width:100%;max-height:90px;overflow:hidden;display:block;pointer-events:auto';
+    iframe.setAttribute('scrolling', 'no');
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
+    node.appendChild(label);
+    node.appendChild(iframe);
+    return () => {
+      try { node.removeChild(label); node.removeChild(iframe); } catch { /* ignore */ }
+    };
+  }, []);
 
   if (Platform.OS !== 'web') return null;
-  return <View ref={ref} style={{ width: '100%', minHeight: 90, marginBottom: 8 }} />;
+  return <View ref={ref} style={{ width: '100%', minHeight: 60, marginBottom: 8 }} />;
 }
 
 // ── Avatar ─────────────────────────────────────────────────────────────────────
@@ -302,7 +310,7 @@ export default function Leaderboard() {
 
   const renderItem = ({ item }: { item: ListItem }) => {
     if (item.type === 'ad') {
-      return <MonetagBanner slotId={item.id} />;
+      return <InlineBanner slotId={item.id} />;
     }
     const { entry, rank } = item;
     const isMe = entry.uid === myUid;
@@ -343,7 +351,7 @@ export default function Leaderboard() {
   return (
     <View style={{ flex: 1, backgroundColor: T.bg0 }}>
       {/* AADS Banner below header */}
-      <AadsBanner />
+      <BannerAd slot="top" />
 
       {/* Header */}
       <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 }}>
@@ -392,7 +400,7 @@ export default function Leaderboard() {
       </ScrollView>
 
       {/* Monetag Video Zone */}
-      <MonetagVideoZone market={tab} />
+      <TabAdZone />
 
       {/* Table header */}
       <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: T.border }}>
