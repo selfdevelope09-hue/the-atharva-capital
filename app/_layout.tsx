@@ -131,10 +131,11 @@ function RootLayoutNav() {
   return (
     <SafeAreaProvider>
       <AuthProfileBridge />
-      <AlertPriceMonitor />
       <InAppToastHost />
       <MarketDataRouter />
       <UnifiedMarketsPriceProvider>
+        {/* AlertPriceMonitor must live inside the provider — it calls useUnifiedMarketsPrices() */}
+        <AlertPriceMonitor />
         <PriceProvider>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
             <View style={{ flex: 1 }}>
