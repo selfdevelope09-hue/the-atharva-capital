@@ -19,6 +19,7 @@ import {
 
 import { NAV_BREAKPOINT } from '@/constants/theme';
 import { LeftSidebar } from '@/src/components/layout/LeftSidebar';
+import { BottomPanel } from '@/src/components/layout/BottomPanel';
 
 import type { AppMarket } from '@/constants/appMarkets';
 import { auth, isFirebaseConfigured } from '@/config/firebaseConfig';
@@ -490,21 +491,22 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
 
       <TickerBar market={cfg} />
 
-      <View style={{ flex: 1, flexDirection: isWide ? 'row' : 'column' }}>
-        {isWide ? (
-          <LeftSidebar
-            marketId={marketId}
-            selectedSymbol={selectedSymbol}
-            onSelectSymbol={setSelectedSymbol}
-          />
-        ) : null}
+      <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, flexDirection: isWide ? 'row' : 'column' }}>
+          {isWide ? (
+            <LeftSidebar
+              marketId={marketId}
+              selectedSymbol={selectedSymbol}
+              onSelectSymbol={setSelectedSymbol}
+            />
+          ) : null}
 
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: 48 }}
-          stickyHeaderIndices={[1]}
-          keyboardShouldPersistTaps="handled"
-        >
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 48 }}
+            stickyHeaderIndices={[1]}
+            keyboardShouldPersistTaps="handled"
+          >
         <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, gap: 10 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
@@ -710,7 +712,9 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
             )}
           </View>
         )}
-        </ScrollView>
+          </ScrollView>
+        </View>
+        <BottomPanel marketId={marketId} />
       </View>
 
       <Modal visible={starOpen} transparent animationType="fade">
