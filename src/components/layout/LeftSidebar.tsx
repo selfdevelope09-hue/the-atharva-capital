@@ -104,7 +104,9 @@ export function LeftSidebar({
   const accent = cfg.accentColor ?? T.yellow;
 
   useMarketSubscribe(marketId);
-  const ticks = useMarketPrices(marketId);
+  // Must destructure `.ticks` — `useMarketPrices()` returns the full context object.
+  // Indexing that object by symbol (e.g. ticks['getTick']) can return a function → RN Web "H is not a function" crash.
+  const { ticks: priceTicks } = useMarketPrices();
 
   // Index
   const [indexState, setIndexState] = useState<IndexState>(null);
@@ -328,12 +330,9 @@ export function LeftSidebar({
 
   const getPricePct = (ticker: string) => {
     const full = cfg.dataSource === 'binance_websocket' ? ticker : yahooSymbolFor(cfg, ticker);
-    const tick = ticks[full];
+    const tick = priceTicks[full];
     const price = tick?.price ?? null;
-    const pct =
-      tick?.price != null && tick?.prevClose != null && tick.prevClose !== 0
-        ? ((tick.price - tick.prevClose) / Math.abs(tick.prevClose)) * 100
-        : null;
+    const pct = tick?.changePct ?? null;
     return { price, pct, full };
   };
 
@@ -475,7 +474,7 @@ export function LeftSidebar({
         >
           <ScrollView keyboardShouldPersistTaps="handled">
             {searchResults.map((s) => {
-              const tick = ticks[s.full];
+              const tick = priceTicks[s.full];
               return (
                 <Pressable
                   key={s.full}
