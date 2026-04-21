@@ -3,8 +3,8 @@
  * Inline styles only; accent from market config; equities + optional India F&O tab.
  */
 
-import { SafeNativeAd } from '@/components/ads/SafeNativeAd';
-import { runRewardedForCashAndUnlocks } from '@/services/ads/RewardedAds';
+import { BannerAd } from '@/src/components/ads/BannerAd';
+import { RewardedAdButton } from '@/src/components/ads/RewardedAd';
 import { useRouter, type Href } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -461,18 +461,12 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
           <Text style={{ color: T.text2, fontSize: 13, marginTop: 12, textAlign: 'center' }}>
             Switzerland & Germany venues require a quick rewarded unlock (24h).
           </Text>
-          <Pressable
-            onPress={() => void runRewardedForCashAndUnlocks()}
-            style={{
-              marginTop: 20,
-              backgroundColor: T.yellow,
-              paddingVertical: 14,
-              borderRadius: T.radiusMd,
-              alignItems: 'center',
-            }}
-          >
-            <Text style={{ color: '#000', fontWeight: '800' }}>Watch ad to unlock 24h</Text>
-          </Pressable>
+          <RewardedAdButton
+            label="Watch Ad → Unlock 24h"
+            rewardDescription="Switzerland & Germany venues require a rewarded unlock."
+            onReward={() => useAdRewardsStore.getState().grantUnlocksFromReward()}
+            style={{ marginTop: 20 }}
+          />
           <Pressable onPress={() => router.replace('/v2' as Href)} style={{ marginTop: 16, alignItems: 'center' }}>
             <Text style={{ color: T.text3, fontSize: 13 }}>Back to markets</Text>
           </Pressable>
@@ -524,10 +518,6 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
           </View>
         </View>
 
-        <View style={{ paddingHorizontal: 16 }}>
-          <SafeNativeAd slotId={1} />
-        </View>
-
         <View style={{ backgroundColor: T.bg0, paddingBottom: 8 }}>
           <ScrollView
             horizontal
@@ -556,10 +546,6 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
           </ScrollView>
         </View>
 
-        <View style={{ paddingHorizontal: 16 }}>
-          <SafeNativeAd slotId={2} />
-        </View>
-
         {tab !== 'watchlists' ? (
           <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
             <TextInput
@@ -584,8 +570,6 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
               }}
             />
 
-            <SafeNativeAd slotId={3} />
-
             {displayRows.length === 0 ? (
               <Text style={{ color: T.text3, fontSize: 13, paddingVertical: 24 }}>No symbols match.</Text>
             ) : (
@@ -599,7 +583,8 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
                 );
               })
             )}
-            <SafeNativeAd slotId={4} />
+            {/* Bottom banner — below the symbol list */}
+            <BannerAd slot="bottom" />
           </View>
         ) : (
           <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
@@ -620,8 +605,6 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
                 <Text style={{ color: T.text0, fontSize: 12, fontWeight: '800' }}>+ Create</Text>
               </Pressable>
             </View>
-
-            <SafeNativeAd slotId={3} />
 
             {wlLoading ? (
               <Text style={{ color: T.text3, fontSize: 13 }}>Loading watchlists…</Text>
@@ -698,7 +681,8 @@ export default function MarketScreenTemplate({ marketId, showFoTab }: MarketScre
                 })}
               </View>
             )}
-            <SafeNativeAd slotId={4} />
+            {/* Bottom banner — below the watchlists */}
+            <BannerAd slot="bottom" />
           </View>
         )}
       </ScrollView>

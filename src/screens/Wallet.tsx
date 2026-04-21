@@ -4,13 +4,13 @@
 
 import type { AppMarket } from '@/constants/appMarkets';
 import { ALL_APP_MARKETS, TOP_UP_AMOUNT } from '@/constants/appMarkets';
-import { SafeNativeAd } from '@/components/ads/SafeNativeAd';
+import { BannerAd } from '@/src/components/ads/BannerAd';
+import { RewardedAdButton } from '@/src/components/ads/RewardedAd';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import Svg, { G, Path } from 'react-native-svg';
 
-import { runRewardedForCashAndUnlocks, REWARDED_REWARD_USD } from '@/services/ads/RewardedAds';
-import { showRewardedVideoForWalletTopUp, VIDEO_REWARD_TOPUP_USD } from '@/services/ads/VideoAdManager';
+import { useAdRewardsStore } from '@/store/adRewardsStore';
 import { auth, isFirebaseConfigured } from '@/config/firebaseConfig';
 import { MARKETS, type MarketId } from '@/src/constants/markets';
 import { fmtMoney, fmtPct, T } from '@/src/constants/theme';
@@ -93,69 +93,20 @@ export default function Wallet() {
           FX via Frankfurter (USD base). Signed in: {isFirebaseConfigured && auth?.currentUser ? auth.currentUser.email ?? auth.currentUser.uid : 'local'}
         </Text>
 
-        <SafeNativeAd slotId={1} />
-
-        <View style={{ backgroundColor: T.bg1, borderRadius: T.radiusMd, borderWidth: 1, borderColor: T.border, padding: 14, marginBottom: 16, gap: 10 }}>
-          <Text style={{ color: T.text0, fontWeight: '800' }}>Rewarded video (AdMob)</Text>
-          <Text style={{ color: T.text3, fontSize: 12 }}>Watch a full video — credits your US sleeve with ${VIDEO_REWARD_TOPUP_USD.toLocaleString()} virtual USD.</Text>
-          <Pressable
-            onPress={async () => {
-              if (Platform.OS === 'web') {
-                Alert.alert('Rewarded video', 'Not available in the browser. Use the iOS or Android app for AdMob rewards.');
-                return;
-              }
-              const r = await showRewardedVideoForWalletTopUp();
-              if (r.ok) {
-                Alert.alert('Rewarded', `+$${VIDEO_REWARD_TOPUP_USD.toLocaleString()} virtual USD credited.`);
-              } else Alert.alert('Rewarded video', r.error ?? 'Try again on an iOS/Android dev build.');
-            }}
-            style={{
-              paddingVertical: 14,
-              borderRadius: 8,
-              alignItems: 'center',
-              backgroundColor: T.bg0,
-              borderWidth: 2,
-              borderColor: T.yellow,
-              ...Platform.select({
-                ios: {
-                  shadowColor: T.yellow,
-                  shadowOpacity: 0.55,
-                  shadowRadius: 14,
-                  shadowOffset: { width: 0, height: 0 },
-                },
-                android: { elevation: 10 },
-                default: {},
-              }),
-            }}
-          >
-            <Text style={{ color: T.yellow, fontWeight: '800', fontSize: 14 }}>Watch Video to Claim $5,000</Text>
-          </Pressable>
+        {/* Watch Ad → Earn virtual cash */}
+        <View style={{ backgroundColor: T.bg1, borderRadius: T.radiusMd, borderWidth: 1, borderColor: T.border, padding: 14, marginBottom: 16 }}>
+          <Text style={{ color: T.text0, fontWeight: '800', marginBottom: 4 }}>Watch Ad → Get +$500</Text>
+          <RewardedAdButton
+            label="Watch Ad → Get +$500"
+            rewardDescription="Watch a short ad to credit your US sleeve with $500 virtual USD."
+            onReward={() => useAdRewardsStore.getState().addVirtualCash(500)}
+          />
         </View>
-
-        <View style={{ backgroundColor: T.bg1, borderRadius: T.radiusMd, borderWidth: 1, borderColor: T.border, padding: 14, marginBottom: 16, gap: 10 }}>
-          <Text style={{ color: T.text0, fontWeight: '800' }}>Watch to earn (sim)</Text>
-          <Text style={{ color: T.text3, fontSize: 12 }}>High-CPM rewarded placement — credits your US sleeve.</Text>
-          <Pressable
-            onPress={async () => {
-              const r = await runRewardedForCashAndUnlocks();
-              if (r.ok) {
-                Alert.alert('Rewarded', `+${REWARDED_REWARD_USD} USD credited · premium unlocks 24h`);
-              } else Alert.alert('Reward', r.error ?? 'Try again');
-            }}
-            style={{ backgroundColor: T.green, padding: 12, borderRadius: 8, alignItems: 'center' }}
-          >
-            <Text style={{ color: '#000', fontWeight: '800' }}>Get +${REWARDED_REWARD_USD}</Text>
-          </Pressable>
-        </View>
-
-        <SafeNativeAd slotId={2} />
 
         <View style={{ backgroundColor: T.bg1, borderRadius: T.radiusLg, borderWidth: 1, borderColor: T.border, padding: 16, marginBottom: 16 }}>
           <Text style={{ color: T.text3, fontSize: 11, fontWeight: '700' }}>TOTAL PORTFOLIO (USD)</Text>
           <Text style={{ color: T.green, fontSize: 28, fontWeight: '800', marginTop: 6 }}>{fmtMoney(totalPortfolioUsd(), '$')}</Text>
         </View>
-
-        <SafeNativeAd slotId={3} />
 
         <Text style={{ color: T.text0, fontWeight: '800', marginBottom: 8 }}>Allocation</Text>
         <View style={{ alignItems: 'center', marginBottom: 16 }}>
@@ -167,8 +118,6 @@ export default function Wallet() {
             <Text style={{ color: T.text3, fontSize: 12 }}>FX rates loading…</Text>
           )}
         </View>
-
-        <SafeNativeAd slotId={4} />
 
         {ALL_APP_MARKETS.map((m) => {
           const cfg = MARKETS[m as MarketId];
@@ -244,6 +193,9 @@ export default function Wallet() {
             </View>
           );
         })}
+
+        {/* Bottom banner — below the market allocation list */}
+        <BannerAd slot="bottom" />
       </ScrollView>
 
       <Modal visible={!!confirmReset} transparent animationType="fade">

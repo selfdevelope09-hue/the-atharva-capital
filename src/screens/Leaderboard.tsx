@@ -4,14 +4,13 @@
 
 import type { AppMarket } from '@/constants/appMarkets';
 import { ALL_APP_MARKETS } from '@/constants/appMarkets';
-import { SafeNativeAd } from '@/components/ads/SafeNativeAd';
-import { WebLeaderboardTopBanner } from '@/components/ads/WebAdSenseSlots';
+import { BannerAd } from '@/src/components/ads/BannerAd';
+import { RewardedAdButton } from '@/src/components/ads/RewardedAd';
 import React, { useMemo, useState } from 'react';
-import { Alert, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { MARKETS, type MarketId } from '@/src/constants/markets';
 import { fmtMoney, fmtPct, T } from '@/src/constants/theme';
-import { runRewardedForCashAndUnlocks } from '@/services/ads/RewardedAds';
 import { useProfileStore } from '@/store/profileStore';
 import { useAdRewardsStore } from '@/store/adRewardsStore';
 import { toggleRival } from '@/services/firebase/rivalsRepository';
@@ -107,9 +106,7 @@ export default function Leaderboard() {
         <Text style={{ color: T.text0, fontSize: 22, fontWeight: '800' }}>Leaderboard</Text>
         <Text style={{ color: T.text3, fontSize: 12, marginTop: 4 }}>Time: {timeFilter} (paper)</Text>
 
-        {Platform.OS === 'web' ? <WebLeaderboardTopBanner /> : null}
-
-        <SafeNativeAd slotId={2} />
+        <BannerAd slot="top" />
 
         <View
           style={{
@@ -128,12 +125,12 @@ export default function Leaderboard() {
             Advanced columns: flow toxicity, queue position, and venue-level PnL (mock).
           </Text>
           {!fullStatsUnlocked ? (
-            <Pressable
-              onPress={() => void runRewardedForCashAndUnlocks()}
-              style={{ alignSelf: 'flex-start', backgroundColor: T.yellow, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 }}
-            >
-              <Text style={{ color: '#000', fontWeight: '800', fontSize: 12 }}>Watch 1 rewarded ad · unlock 24h</Text>
-            </Pressable>
+            <RewardedAdButton
+              label="Watch Ad → See Full Leaderboard"
+              rewardDescription="Watch a short ad to unlock full stats and depth for 24 hours."
+              onReward={() => useAdRewardsStore.getState().grantUnlocksFromReward()}
+              style={{ alignSelf: 'flex-start' }}
+            />
           ) : (
             <Text style={{ color: T.green, fontSize: 12, fontWeight: '700' }}>Unlocked — enjoy full depth.</Text>
           )}
@@ -239,6 +236,11 @@ export default function Leaderboard() {
             </Pressable>
           );
         })}
+
+        {/* Bottom banner — below the leaderboard rows */}
+        <View style={{ paddingHorizontal: 8, paddingVertical: 8 }}>
+          <BannerAd slot="bottom" />
+        </View>
       </ScrollView>
 
       <View

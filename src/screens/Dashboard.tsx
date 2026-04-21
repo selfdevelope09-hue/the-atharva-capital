@@ -3,8 +3,7 @@
  */
 
 import type { AppMarket } from '@/constants/appMarkets';
-import { SafeNativeAd } from '@/components/ads/SafeNativeAd';
-import { WebDashboardSidebarRail } from '@/components/ads/WebAdSenseSlots';
+import { BannerAd } from '@/src/components/ads/BannerAd';
 import { useRouter, type Href } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -323,11 +322,6 @@ export default function Dashboard() {
         </View>
         <MarketSelector active={marketSel} onChange={onSelChange} />
 
-        <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-          <SafeNativeAd slotId={1} />
-          <SafeNativeAd slotId={2} />
-        </View>
-
         <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 8 }}>
           <Text style={{ color: T.text2, fontSize: 12 }}>
             Client {clientId ?? '—'} · {marketSel === 'all' ? 'All markets' : MARKETS[marketSel as MarketId].name}
@@ -360,10 +354,6 @@ export default function Dashboard() {
           <StatCard label="Fees paid" value={fmtMoney(totalFees, '$')} sub="All-in per market ccy" />
         </View>
 
-        <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
-          <SafeNativeAd slotId={3} />
-        </View>
-
         <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
           <Text style={{ color: T.text0, fontWeight: '800', marginBottom: 8 }}>Equity curve</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 8 }}>
@@ -393,10 +383,6 @@ export default function Dashboard() {
         <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
           <Text style={{ color: T.text0, fontWeight: '800', marginBottom: 8 }}>Calendar (realized, local ccy)</Text>
           <Heatmap daily={dailyMap} width={W} />
-        </View>
-
-        <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
-          <SafeNativeAd slotId={4} />
         </View>
 
         <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
@@ -554,13 +540,12 @@ export default function Dashboard() {
             )}
           />
         </View>
-      </ScrollView>
 
-      {isNavRail && Platform.OS === 'web' ? (
-        <View style={{ paddingTop: 12, paddingRight: 8 }}>
-          <WebDashboardSidebarRail />
+        {/* Bottom banner — below the trade history list */}
+        <View style={{ paddingHorizontal: 16, paddingVertical: 8 }}>
+          <BannerAd slot="bottom" />
         </View>
-      ) : null}
+      </ScrollView>
 
       {chartPos ? (
         <PositionChartModal

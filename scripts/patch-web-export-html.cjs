@@ -103,13 +103,3 @@ for (const file of htmlFiles) {
 }
 
 console.log(`[patch] done — ${patchedCount}/${htmlFiles.length} file(s) patched`);
-
-// Ensure sw.js is present in dist/ (Expo copies public/ automatically, but this is a safety net)
-const swSrc = path.join(__dirname, '..', 'public', 'sw.js');
-const swDst = path.join(distDir, 'sw.js');
-if (fs.existsSync(swSrc)) {
-  fs.copyFileSync(swSrc, swDst);
-  console.log('[patch] sw.js copied to dist/');
-} else {
-  console.warn('[patch] public/sw.js not found — skipping copy');
-}
