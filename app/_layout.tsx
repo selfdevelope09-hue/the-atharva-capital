@@ -19,6 +19,7 @@ import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import '../global.css';
 
+import { AppRootErrorBoundary, RootFontErrorScreen, RootLoadingScreen } from '@/components/AppRootErrorBoundary';
 import { InterstitialModal } from '@/components/ads/InterstitialModal';
 import { SmartBanner } from '@/components/ads/SmartBanner';
 import { AlertPriceMonitor } from '@/components/AlertPriceMonitor';
@@ -60,9 +61,10 @@ export default function RootLayout() {
     JetBrainsMono_500Medium,
   });
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
   useEffect(() => {
-    if (error) throw error;
+    if (error && __DEV__) {
+      console.error('[fonts]', error);
+    }
   }, [error]);
 
   useEffect(() => {
@@ -71,11 +73,19 @@ export default function RootLayout() {
     }
   }, [loaded]);
 
-  if (!loaded) {
-    return null;
+  if (error) {
+    return <RootFontErrorScreen error={error} />;
   }
 
-  return <RootLayoutNav />;
+  if (!loaded) {
+    return <RootLoadingScreen />;
+  }
+
+  return (
+    <AppRootErrorBoundary>
+      <RootLayoutNav />
+    </AppRootErrorBoundary>
+  );
 }
 
 function RootLayoutNav() {
