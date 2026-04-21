@@ -2,7 +2,12 @@ import { getAnalytics } from 'firebase/analytics';
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
+// ─── Firebase project: atharva-capital-v2 ────────────────────────────────────
+// Console: https://console.firebase.google.com/project/atharva-capital-v2
+// Auth providers enabled: Google, Facebook, Phone/SMS, Email/Password
+// Firestore rules: users/{uid} — read/write if request.auth.uid == uid
 const firebaseConfig = {
   apiKey: 'AIzaSyD7fVrGnEirI1DRO6LYQbx0FMSaOLsaeRE',
   authDomain: 'atharva-capital-v2.firebaseapp.com',
@@ -17,6 +22,9 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+/** Firebase Storage — used for profile photo uploads */
+export const storage = getStorage(app);
 
 /**
  * Analytics is web-only (no native Firebase Analytics SDK bundled here).

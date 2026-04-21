@@ -1,9 +1,16 @@
 /**
- * BannerAd — web-only banner that injects an Adsterra script into a DOM node.
- * Returns null on iOS/Android (no ad on native = no crash).
+ * BannerAd — embeds the AADS unit #2435144 (adaptive iframe).
  *
- * SETUP: Replace ADSTERRA_BANNER_SCRIPT_URL below with your Adsterra banner tag URL
- * from: Sites → theatharvacapital.com → Add Ad Format → Banner → Copy script src
+ * AADS ad unit code (DO NOT MODIFY):
+ * <div id="frame" style="width:100%;margin:auto;position:relative;z-index:99998;">
+ *   <iframe data-aa='2435144'
+ *     src='//acceptable.a-ads.com/2435144/?size=Adaptive'
+ *     style='border:0;padding:0;width:70%;height:auto;overflow:hidden;display:block;margin:auto'>
+ *   </iframe>
+ * </div>
+ *
+ * Auto-refreshes every 30 seconds by cycling the iframe src.
+ * Returns null on native (iOS/Android) — no crash.
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -11,63 +18,60 @@ import { Platform, View } from 'react-native';
 
 import { adRefreshManager } from '@/src/services/AdRefreshManager';
 
-// ── Replace with your Adsterra banner script URLs ───────────────────────────
-const ADSTERRA_DESKTOP_SCRIPT = ''; // e.g. '//www.topdisplayformat.com/...'
-const ADSTERRA_MOBILE_SCRIPT  = ''; // 300x250 script for mobile web
-// ────────────────────────────────────────────────────────────────────────────
-
 export interface BannerAdProps {
-  slot: 'top' | 'bottom' | 'inline';
+  slot?: 'top' | 'bottom' | 'inline';
   /** Refresh interval in ms. Default: 30 000 */
   refreshInterval?: number;
 }
 
 let _counter = 0;
 
-export function BannerAd({ slot, refreshInterval = 30_000 }: BannerAdProps) {
-  const idRef = useRef(`banner-ad-${++_counter}`);
+export function BannerAd({ slot = 'bottom', refreshInterval = 30_000 }: BannerAdProps) {
+  const containerId = useRef(`aads-frame-${++_counter}`).current;
 
-  const loadAd = () => {
+  const injectAd = () => {
     if (typeof document === 'undefined') return;
-    const container = document.getElementById(idRef.current);
+    const container = document.getElementById(containerId);
     if (!container) return;
 
-    // Clear previous ad content
-    container.innerHTML = '';
+    // Build the exact AADS iframe HTML as specified
+    container.innerHTML = `
+      <div id="frame" style="width:100%;margin:auto;position:relative;z-index:99998;">
+        <iframe
+          data-aa="2435144"
+          src="//acceptable.a-ads.com/2435144/?size=Adaptive&t=${Date.now()}"
+          style="border:0;padding:0;width:70%;height:auto;overflow:hidden;display:block;margin:auto;"
+          scrolling="no"
+          allow="autoplay"
+        ></iframe>
+      </div>`;
+  };
 
-    const scriptUrl = ADSTERRA_DESKTOP_SCRIPT || ADSTERRA_MOBILE_SCRIPT;
-    if (!scriptUrl) return; // No URL yet — renders an empty slot
-
-    try {
-      const script = document.createElement('script');
-      script.async = true;
-      script.setAttribute('data-cfasync', 'false');
-      script.src = scriptUrl;
-      container.appendChild(script);
-    } catch (e) {
-      // Never crash the app due to ad failure
+  const refreshAd = () => {
+    if (typeof document === 'undefined') return;
+    const iframe = document.querySelector<HTMLIFrameElement>('[data-aa="2435144"]');
+    if (iframe) {
+      const base = '//acceptable.a-ads.com/2435144/?size=Adaptive';
+      iframe.src = '';
+      requestAnimationFrame(() => { iframe.src = `${base}&t=${Date.now()}`; });
     }
   };
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
-
-    loadAd();
-    adRefreshManager.startRefresh(idRef.current, loadAd, refreshInterval);
-
-    return () => {
-      adRefreshManager.stopRefresh(idRef.current);
-    };
+    injectAd();
+    adRefreshManager.startRefresh(containerId, refreshAd, refreshInterval);
+    return () => adRefreshManager.stopRefresh(containerId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshInterval]);
 
   if (Platform.OS !== 'web') return null;
 
-  const minHeight = slot === 'top' ? 90 : 60;
+  const minHeight = slot === 'top' ? 90 : slot === 'inline' ? 60 : 80;
 
   return (
     <View
-      nativeID={idRef.current}
+      nativeID={containerId}
       style={{
         width: '100%',
         minHeight,

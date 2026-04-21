@@ -53,19 +53,38 @@ SplashScreen.preventAutoHideAsync();
 const WEB_SHELL_BG = '#0b0e11';
 
 /**
- * On first mount, unregisters any previously installed service workers
- * (e.g. legacy Monetag SW) so push-notification ads stop running.
- * Does NOT inject any ad scripts — banners are explicit <BannerAd> components.
+ * AdManager — runs once on first web mount.
+ *
+ * 1. Unregisters any previously installed service workers (legacy Monetag SW push ads).
+ * 2. Injects Monetag native-banner script (zone 232062) — non-intrusive strip only.
+ *    No popups, no push notifications, no onclick/popunder.
  */
 function AdManager() {
   useEffect(() => {
-    if (Platform.OS !== 'web' || typeof navigator === 'undefined') return;
-    if (!('serviceWorker' in navigator)) return;
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    // ── Step 1: unregister legacy push-ad service workers ─────────────────────
+    if ('serviceWorker' in navigator) {
+      try {
+        navigator.serviceWorker.getRegistrations().then((regs) => {
+          regs.forEach((r) => r.unregister());
+        });
+      } catch { /* ignore */ }
+    }
+
+    // ── Step 2: Monetag native-banner (zone 232062) ────────────────────────────
+    // Only inject once — guard against HMR double-mount
+    if (document.getElementById('monetag-native-script')) return;
     try {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        registrations.forEach((reg) => reg.unregister());
-      });
-    } catch { /* ignore */ }
+      const script = document.createElement('script');
+      script.id = 'monetag-native-script';
+      // Monetag zone tag — renders native banner placeholders in .monetag-banner divs
+      script.src = 'https://quge5.com/88/tag.min.js';
+      script.setAttribute('data-zone', '232062');
+      script.async = true;
+      script.setAttribute('data-cfasync', 'false');
+      document.head.appendChild(script);
+    } catch { /* never crash for ads */ }
   }, []);
 
   return null;
