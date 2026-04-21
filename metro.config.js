@@ -10,11 +10,17 @@ config.resolver.extraNodeModules = {
 config.transformer = {
   ...config.transformer,
   unstable_allowRequireContext: true,
-  // Prevents "ReferenceError: __METRO_GLOBAL_PREFIX__ is not defined" on web.
-  // Metro emits this as a runtime var in the bundle; when we convert bundles to
-  // type="module" the var stays module-scoped and becomes undefined everywhere else.
-  // Setting globalPrefix to '' bakes an empty string into every access site instead.
+  // Bakes an empty string into every __METRO_GLOBAL_PREFIX__ access site so the
+  // variable never needs to exist at runtime (fixes the ReferenceError on web).
   globalPrefix: '',
+  minifierConfig: {
+    keep_classnames: true,
+    keep_fnames: true,
+    mangle: {
+      keep_classnames: true,
+      keep_fnames: true,
+    },
+  },
 };
 
 module.exports = withNativeWind(config, { input: './global.css' });

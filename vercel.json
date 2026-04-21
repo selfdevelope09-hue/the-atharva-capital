@@ -7,7 +7,7 @@
   ],
   "headers": [
     {
-      "source": "/_expo/static/js/(.*).js",
+      "source": "/_expo/static/js/(.*)",
       "headers": [
         { "key": "Content-Type", "value": "application/javascript; charset=utf-8" }
       ]

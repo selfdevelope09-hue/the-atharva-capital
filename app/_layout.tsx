@@ -1,4 +1,5 @@
-import '@/src/polyfills';
+// ─── MUST be the very first import — sets up global polyfills before anything else ───
+import '@/src/globals';
 
 import {
   Inter_400Regular,
@@ -13,9 +14,9 @@ import {
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Platform, View } from 'react-native';
 import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -51,6 +52,72 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync();
 
 const WEB_SHELL_BG = '#0b0e11';
+
+// Auth screens where ads must NEVER be shown
+const AUTH_PATHS = new Set(['/login', '/signup', '/otp']);
+function isAuthPath(pathname: string) {
+  return AUTH_PATHS.has(pathname) || pathname.includes('/auth');
+}
+
+/**
+ * Injects Monetag ad script + SW registration ONLY after the user is logged in
+ * AND is not on an auth screen.  Uses `usePathname` from Expo Router — must be
+ * rendered inside the navigation context (i.e. inside AppContent).
+ */
+function AdManager() {
+  const pathname = usePathname();
+  const firebaseUser = useProfileStore((s) => s.firebaseUser);
+  const adInjectedRef = useRef(false);
+  const swRegisteredRef = useRef(false);
+
+  const isRealUser = Boolean(firebaseUser && !firebaseUser.isAnonymous);
+  const onAuthScreen = isAuthPath(pathname);
+  const shouldShowAds = isRealUser && !onAuthScreen && Platform.OS === 'web';
+
+  // Monetag main script — injected once, never on auth screens
+  useEffect(() => {
+    if (!shouldShowAds || typeof document === 'undefined') return;
+    if (adInjectedRef.current) return;
+
+    try {
+      // Guard against duplicate injection across re-renders
+      if (document.querySelector('script[data-zone="232062"]')) {
+        adInjectedRef.current = true;
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://quge5.com/88/tag.min.js';
+      script.setAttribute('data-zone', '232062');
+      script.async = true;
+      script.setAttribute('data-cfasync', 'false');
+      document.head.appendChild(script);
+      adInjectedRef.current = true;
+    } catch (e) {
+      console.log('[Monetag] ad script load failed:', e);
+    }
+  }, [shouldShowAds]);
+
+  // Service worker (Monetag push) — registered once, never on auth screens
+  useEffect(() => {
+    if (!shouldShowAds || typeof window === 'undefined') return;
+    if (swRegisteredRef.current) return;
+    if (!('serviceWorker' in navigator)) return;
+
+    try {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then(() => {
+          swRegisteredRef.current = true;
+          console.log('[SW] registered');
+        })
+        .catch((err) => console.log('[SW] error:', err));
+    } catch (e) {
+      console.log('[Monetag] SW registration failed:', e);
+    }
+  }, [shouldShowAds]);
+
+  return null;
+}
 
 /**
  * Auth guard rendered inside the Expo Router tree.
@@ -91,6 +158,7 @@ export default function RootLayout() {
     JetBrainsMono_500Medium,
   });
 
+  // Force dark background on web shell before React hydrates
   useEffect(() => {
     if (typeof document === 'undefined') return;
     document.documentElement.style.background = WEB_SHELL_BG;
@@ -100,33 +168,6 @@ export default function RootLayout() {
     if (root) {
       root.style.backgroundColor = WEB_SHELL_BG;
       root.style.minHeight = '100%';
-    }
-  }, []);
-
-  // Monetag ads — web only, wrapped in try/catch so any ad error never crashes the app
-  useEffect(() => {
-    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-
-    try {
-      const script = document.createElement('script');
-      script.src = 'https://quge5.com/88/tag.min.js';
-      script.setAttribute('data-zone', '232062');
-      script.async = true;
-      script.setAttribute('data-cfasync', 'false');
-      document.head.appendChild(script);
-    } catch (e) {
-      console.log('[Monetag] ad script load failed:', e);
-    }
-
-    try {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker
-          .register('/sw.js')
-          .then(() => console.log('[SW] registered'))
-          .catch((err) => console.log('[SW] error:', err));
-      }
-    } catch (e) {
-      console.log('[Monetag] SW registration failed:', e);
     }
   }, []);
 
@@ -200,7 +241,9 @@ function AppContent() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <View style={{ flex: 1 }}>
+        {/* AuthGuard + AdManager both need to be inside the navigation context */}
         <AuthGuard />
+        <AdManager />
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="login" options={{ headerShown: false }} />
