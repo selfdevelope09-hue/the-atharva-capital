@@ -2,12 +2,13 @@
  * Chat List — Instagram DM-style conversation list.
  */
 
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useGlobalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
 import { FlatList, Image, Pressable, Text, TextInput, View } from 'react-native';
 
 import { auth } from '@/config/firebaseConfig';
 import {
+  getOrCreateConversation,
   subscribeConversations,
   type Conversation,
 } from '@/services/firebase/chatRepository';
@@ -66,10 +67,28 @@ function timeAgo(iso: string): string {
 export function ChatListScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useGlobalSearchParams<{ with?: string | string[] }>();
+  const withUid = typeof params.with === 'string' ? params.with : params.with?.[0];
   const myUid = auth?.currentUser?.uid ?? '';
   const [convs, setConvs] = useState<ConvRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const openedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const other = typeof withUid === 'string' ? withUid : Array.isArray(withUid) ? withUid[0] : undefined;
+    if (!other || !myUid || other === myUid) return;
+    if (openedRef.current === other) return;
+    openedRef.current = other;
+    void (async () => {
+      try {
+        const convId = await getOrCreateConversation(other);
+        router.replace(`/chats/${convId}?otherUid=${encodeURIComponent(other)}` as never);
+      } catch {
+        openedRef.current = null;
+      }
+    })();
+  }, [withUid, myUid, router]);
 
   useEffect(() => {
     if (!myUid) { setLoading(false); return; }
