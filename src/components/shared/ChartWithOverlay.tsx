@@ -30,8 +30,10 @@ import {
   yToPrice,
 } from './chartOverlayMath';
 import {
+  buildAdvancedChartHtmlPageWithRemountBridge,
   buildAdvancedChartWidgetConfig,
-  buildTradingViewAdvancedChartHtmlPage,
+  buildAdvancedTvWidgetConfig,
+  buildWebViewRemountScript,
   mountTradingViewAdvancedChartWeb,
 } from '@/src/utils/chart/tradingViewAdvancedChart';
 
@@ -169,20 +171,25 @@ export function ChartWithOverlay(props: ChartWithOverlayProps) {
 
   const embedConfig = useMemo(
     () =>
-      buildAdvancedChartWidgetConfig({
-        symbol: tvSymbol,
-        interval,
-        theme,
-        locale,
-        timezone,
-        allowSymbolChange: false,
-      }),
+      theme === 'light'
+        ? buildAdvancedChartWidgetConfig({
+            symbol: tvSymbol,
+            interval,
+            theme: 'light',
+            locale,
+            timezone,
+            allowSymbolChange: false,
+          })
+        : buildAdvancedTvWidgetConfig({
+            symbol: tvSymbol,
+            interval,
+            theme: 'dark',
+            locale,
+            timezone,
+            allowSymbolChange: false,
+            studies: ['BB@tv-basicstudies', 'MASimple@tv-basicstudies'],
+          }),
     [tvSymbol, interval, theme, locale, timezone],
-  );
-
-  const nativeChartHtml = useMemo(
-    () => buildTradingViewAdvancedChartHtmlPage(embedConfig),
-    [embedConfig],
   );
 
   const tp = tpsl.tp ?? tpsl.entry;
@@ -282,7 +289,7 @@ export function ChartWithOverlay(props: ChartWithOverlayProps) {
         />
       ) : (
         <View style={{ width: '100%', height }}>
-          <NativeWebBlock html={nativeChartHtml} frameBg={frameBg} height={height} />
+          <NativeWebBlock embedConfig={embedConfig} frameBg={frameBg} height={height} />
           <NativeTpSlOverlay
             entry={tpsl.entry}
             takeProfit={tp}
@@ -1000,16 +1007,34 @@ function WebChartBlock({
 
 /* ─── Native WebView block ──────────────────────────────────────────────────── */
 
-type NativeWebBlockProps = { html: string; frameBg: string; height: number };
+type NativeWebBlockProps = { embedConfig: Record<string, unknown>; frameBg: string; height: number };
 
-function NativeWebBlock({ html, frameBg, height }: NativeWebBlockProps) {
+function NativeWebBlock({ embedConfig, frameBg, height }: NativeWebBlockProps) {
+  const htmlRef = useRef<string | null>(null);
+  if (htmlRef.current == null) {
+    htmlRef.current = buildAdvancedChartHtmlPageWithRemountBridge(embedConfig);
+  }
+  const webRef = useRef<WebView | null>(null);
+  const readyRef = useRef(false);
+
+  useEffect(() => {
+    if (!readyRef.current) return;
+    webRef.current?.injectJavaScript(buildWebViewRemountScript(embedConfig));
+  }, [embedConfig]);
+
   return (
     <WebView
-      source={{ html, baseUrl: 'https://www.tradingview.com' }}
+      ref={webRef}
+      source={{ html: htmlRef.current, baseUrl: 'https://www.tradingview.com' }}
       style={{ width: '100%', height, minHeight: height, flex: 1, backgroundColor: frameBg }}
       javaScriptEnabled
       domStorageEnabled
       allowsInlineMediaPlayback
+      scrollEnabled={false}
+      onLoadEnd={() => {
+        readyRef.current = true;
+        webRef.current?.injectJavaScript(buildWebViewRemountScript(embedConfig));
+      }}
       startInLoadingState={false}
       originWhitelist={['*']}
       androidLayerType="hardware"

@@ -1,8 +1,9 @@
 import type { AppMarket } from '@/constants/appMarkets';
+import type { LedgerOpenPosition } from '@/types/ledger';
 import { useLedgerStore } from '@/store/ledgerStore';
 import { useMultiMarketBalanceStore } from '@/store/multiMarketBalanceStore';
 import { useAdUxStore } from '@/store/adUxStore';
-import { useRouter, type Href } from 'expo-router';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dimensions, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -187,7 +188,7 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
       timezone={market.timezone ?? 'Etc/UTC'}
       height={
         isDesktop
-          ? Math.min(720, Math.max(480, screenH * 0.52))
+          ? Math.max(320, chartSlotH)
           : mobileChartHeight
       }
       /* Pre-trade props */
@@ -267,52 +268,48 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
           </Text>
           {tick?.marketState && <StatePill state={tick.marketState} />}
         </View>
+        {isDesktop ? (
+          <View style={{ marginTop: 10 }}>
+            <Text style={{ color: T.text3, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 8 }}>PAIRS</Text>
+            <PairPicker market={market} activeTicker={ticker} />
+          </View>
+        ) : null}
       </View>
 
       {isDesktop ? (
-        <View style={{ flex: 1, flexDirection: 'row', minHeight: 0 }}>
-          <View style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-            <View style={{ flex: 1, minHeight: 0, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}>
+        <View style={{ flex: 1, minHeight: 0, flexDirection: 'column' }}>
+          <View style={{ flex: 1, flexDirection: 'row', minHeight: 0 }}>
+            <View
+              style={{ flex: 3, minWidth: 0, minHeight: 0, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 }}
+              onLayout={(e) => setChartSlotH(e.nativeEvent.layout.height)}
+            >
               {chart}
             </View>
             <View
               style={{
-                paddingHorizontal: 16,
-                paddingVertical: 10,
-                borderTopWidth: 1,
-                borderBottomWidth: 1,
+                flex: 1,
+                minWidth: 280,
+                maxWidth: 520,
+                alignSelf: 'stretch',
+                borderLeftWidth: 1,
                 borderColor: T.border,
-                backgroundColor: T.bg1,
+                backgroundColor: T.bg0,
+                minHeight: 0,
+                flexDirection: 'column',
               }}
             >
-              <Text style={{ color: T.text3, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 8 }}>
-                SYMBOLS
-              </Text>
-              <PairPicker market={market} activeTicker={ticker} />
+              <View style={{ flex: 1, minHeight: 0 }}>
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{ padding: 16, paddingBottom: 12 }}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {orderPanel}
+                </ScrollView>
+              </View>
             </View>
           </View>
-          <View
-            style={{
-              width: 380,
-              minWidth: 320,
-              alignSelf: 'stretch',
-              borderLeftWidth: 1,
-              borderColor: T.border,
-              backgroundColor: T.bg0,
-              minHeight: 0,
-              flexDirection: 'column',
-            }}
-          >
-            <View style={{ flex: 1, minHeight: 0 }}>
-              <ScrollView
-                style={{ flex: 1 }}
-                contentContainerStyle={{ padding: 16, paddingBottom: 12 }}
-                keyboardShouldPersistTaps="handled"
-              >
-                {orderPanel}
-              </ScrollView>
-            </View>
-          </View>
+          <DesktopPositionsFooter market={market} positions={allPositions.filter((p) => p.market === mkt)} tickMap={ticks} />
         </View>
       ) : (
         <View style={{ flex: 1, minHeight: 0 }}>
@@ -395,6 +392,102 @@ function StatePill({ state }: { state: string }) {
   );
 }
 
+function DesktopPositionsFooter({
+  market,
+  positions,
+  tickMap,
+}: {
+  market: MarketConfig;
+  positions: LedgerOpenPosition[];
+  tickMap: Record<string, { price?: number } | undefined>;
+}) {
+  return (
+    <View
+      style={{
+        borderTopWidth: 1,
+        borderColor: T.border,
+        backgroundColor: T.bg1,
+        paddingHorizontal: 12,
+        paddingTop: 10,
+        paddingBottom: 8,
+        minHeight: 100,
+        maxHeight: 200,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <Text style={{ color: T.text3, fontSize: 10, fontWeight: '800', letterSpacing: 0.8 }}>POSITIONS & ORDERS</Text>
+        <Text style={{ color: T.text3, fontSize: 10, fontStyle: 'italic' }}>Market-only · no resting queue</Text>
+      </View>
+      {positions.length === 0 ? (
+        <Text style={{ color: T.text2, fontSize: 12 }}>No open positions in this market.</Text>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 0, paddingBottom: 4 }}
+        >
+          <View style={{ borderWidth: 1, borderColor: T.border, borderRadius: 8, overflow: 'hidden', minWidth: 560 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                backgroundColor: T.bg0,
+                paddingVertical: 6,
+                paddingHorizontal: 8,
+                gap: 8,
+                borderBottomWidth: 1,
+                borderColor: T.border,
+              }}
+            >
+              {['Symbol', 'Side', 'Entry', 'Mark', 'uPnL'].map((h) => (
+                <Text key={h} style={{ color: T.text3, fontSize: 10, fontWeight: '800', width: h === 'Symbol' ? 80 : 72 }}>
+                  {h}
+                </Text>
+              ))}
+            </View>
+            {positions.map((p) => {
+              const full =
+                market.dataSource === 'binance_websocket' ? p.symbol : toYahooFullSymbol(market, p.symbol);
+              const mk = tickMap[full]?.price;
+              const upl =
+                mk != null && Number.isFinite(mk)
+                  ? p.side === 'long'
+                    ? (mk - p.entryPrice) * p.qty
+                    : (p.entryPrice - mk) * p.qty
+                  : null;
+              const upColor = upl == null ? T.text2 : upl >= 0 ? T.green : T.red;
+              return (
+                <View
+                  key={p.id}
+                  style={{ flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 8, gap: 8, backgroundColor: T.bg1 }}
+                >
+                  <Text style={{ color: T.text0, fontSize: 12, width: 80, fontWeight: '600' }}>{p.symbol}</Text>
+                  <Text
+                    style={{
+                      color: p.side === 'long' ? T.green : T.red,
+                      fontSize: 12,
+                      width: 72,
+                      fontWeight: '700',
+                    }}
+                  >
+                    {p.side === 'long' ? 'Long' : 'Short'}
+                  </Text>
+                  <Text style={{ color: T.text1, fontSize: 12, width: 72 }}>{fmtMoney(p.entryPrice, p.currencySymbol)}</Text>
+                  <Text style={{ color: T.text1, fontSize: 12, width: 72 }}>
+                    {mk != null ? fmtMoney(mk, p.currencySymbol) : '—'}
+                  </Text>
+                  <Text style={{ color: upColor, fontSize: 12, width: 100, fontWeight: '700' }}>
+                    {upl != null ? fmtMoney(upl, p.currencySymbol) : '—'}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
 function PairPicker({ market, activeTicker }: { market: MarketConfig; activeTicker: string }) {
   const router = useRouter();
   return (
@@ -404,7 +497,10 @@ function PairPicker({ market, activeTicker }: { market: MarketConfig; activeTick
         return (
           <Pressable
             key={p}
-            onPress={() => router.replace(`/v2/${market.id}/trade?symbol=${encodeURIComponent(p)}` as Href)}
+            onPress={() => {
+              if (p === activeTicker) return;
+              router.setParams({ symbol: p });
+            }}
             style={{
               paddingHorizontal: 14,
               paddingVertical: 8,

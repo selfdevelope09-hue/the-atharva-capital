@@ -63,6 +63,18 @@ export function buildPaperTradingChartConfig(opts: PaperTradingChartOptions): Re
 }
 
 /**
+ * Pro terminal: same dark styling as paper chart; toolbars and price scale stay visible
+ * (hide_* flags false on the free Advanced embed). Use for trade + AdvancedTVChart.
+ */
+export function buildAdvancedTvWidgetConfig(opts: PaperTradingChartOptions): Record<string, unknown> {
+  return buildPaperTradingChartConfig({
+    ...opts,
+    theme: opts.theme ?? 'dark',
+    allowSymbolChange: opts.allowSymbolChange ?? false,
+  });
+}
+
+/**
  * Mount the Advanced Chart widget (web DOM). The script tag contains JSON config
  * as text (TradingView reads it from the same &lt;script&gt; node).
  */
@@ -126,4 +138,62 @@ export function buildTradingViewAdvancedChartHtmlPage(config: Record<string, unk
   </div>
 </body>
 </html>`;
+}
+
+/**
+ * WebView: initial load embeds the chart once; `window.__remountTV(cfg)` re-mounts the
+ * same widget (symbol/interval) without replacing the `source` — keeps RN WebView from reloading.
+ */
+export function buildAdvancedChartHtmlPageWithRemountBridge(initial: Record<string, unknown>): string {
+  const scriptUrl = TRADINGVIEW_ADVANCED_CHART_SCRIPT;
+  const initialJson = JSON.stringify(initial).replace(/</g, '\\u003c');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <style>
+    html, body, #host { margin: 0; padding: 0; height: 100%; width: 100%; background: #0b0e11; overflow: hidden; }
+    .tradingview-widget-container { height: 100%; width: 100%; }
+    .tradingview-widget-container__widget { height: 100%; width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="host"></div>
+  <script>
+    (function () {
+      var scriptUrl = ${JSON.stringify(scriptUrl)};
+      function mountCfg(cfg) {
+        var h = document.getElementById('host');
+        if (!h) return;
+        h.innerHTML = '';
+        var wrap = document.createElement('div');
+        wrap.className = 'tradingview-widget-container';
+        wrap.style.height = '100%';
+        wrap.style.width = '100%';
+        var w = document.createElement('div');
+        w.className = 'tradingview-widget-container__widget';
+        w.style.height = '100%';
+        w.style.width = '100%';
+        wrap.appendChild(w);
+        var s = document.createElement('script');
+        s.type = 'text/javascript';
+        s.src = scriptUrl;
+        s.async = true;
+        s.appendChild(document.createTextNode(JSON.stringify(cfg)));
+        wrap.appendChild(s);
+        h.appendChild(wrap);
+      }
+      window.__remountTV = function (cfg) { mountCfg(cfg); };
+      mountCfg(${initialJson});
+    })();
+  </script>
+</body>
+</html>`;
+}
+
+/** React Native `WebView.injectJavaScript` — calls `window.__remountTV` with the next config. */
+export function buildWebViewRemountScript(config: Record<string, unknown>): string {
+  const raw = JSON.stringify(config);
+  return `true;(function(){try{window.__remountTV&&window.__remountTV(${raw});}catch(e){}})();`;
 }

@@ -227,6 +227,7 @@ function AppContent() {
           <Stack.Screen name="chats/[conversationId]" options={{ headerShown: false }} />
           <Stack.Screen name="topup/[market]" options={{ headerShown: false }} />
           <Stack.Screen name="trades" options={{ headerShown: false }} />
+          <Stack.Screen name="chart-widget" options={{ headerShown: false }} />
         </Stack>
         <SmartBanner />
         <InterstitialModal />
