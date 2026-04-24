@@ -48,8 +48,9 @@ export default function CryptoTradeScreen() {
   const [symbol, setSymbol] = useState(initialSymbol);
   const [orderSheetOpen, setOrderSheetOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const { width } = useWindowDimensions();
+  const { width, height: winH } = useWindowDimensions();
   const isDesktop = width >= 900;
+  const chartMinH = isDesktop ? 360 : Math.min(580, Math.max(380, Math.floor(winH * 0.48)));
 
   const tick = usePriceTick(symbol);
   const { prices } = usePriceContext();
@@ -159,14 +160,15 @@ export default function CryptoTradeScreen() {
         active={symbol}
         onChange={handleSymbolChange}
       />
-      <View style={{ flex: 1, flexDirection: isDesktop ? 'row' : 'column' }}>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <View style={{ flex: 1, position: 'relative' }}>
+      <View style={{ flex: 1, flexDirection: isDesktop ? 'row' : 'column', minHeight: 0 }}>
+        <View style={{ flex: 1, minWidth: 0, minHeight: isDesktop ? undefined : chartMinH }}>
+          <View style={{ flex: 1, minHeight: chartMinH, position: 'relative' }}>
             <CryptoChartFrame
               symbol={symbol}
               interval="15"
               theme="dark"
-              showFullscreen={isDesktop}
+              minHeight={chartMinH}
+              showFullscreen
               onFullscreen={() => setIsFullscreen(true)}
             />
             {effectiveEntry > 0 && takeProfit > 0 && stopLoss > 0 ? (
@@ -257,7 +259,7 @@ export default function CryptoTradeScreen() {
               </Pressable>
             </View>
             <View style={{ flex: 1, position: 'relative' }}>
-              <CryptoChartFrame symbol={symbol} interval="15" theme="dark" />
+              <CryptoChartFrame symbol={symbol} interval="15" theme="dark" minHeight={chartMinH} />
               {effectiveEntry > 0 && takeProfit > 0 && stopLoss > 0 ? (
                 <TpSlOverlay
                   entry={effectiveEntry}

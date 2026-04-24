@@ -1,6 +1,6 @@
 import { useRouter, type Href } from 'expo-router';
 import React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { type GestureResponderEvent, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeNativeAd } from '@/components/ads/SafeNativeAd';
 import { MARKETS, MARKET_IDS } from '@/src/constants/markets';
 import { T } from '@/src/constants/theme';
@@ -51,7 +51,25 @@ export default function V2Hub() {
                     </View>
                   ))}
                 </View>
-                <Text style={{ color: m.accentColor ?? T.yellow, fontSize: 11, fontWeight: '800', marginTop: 12 }}>Open →</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 12, alignItems: 'center' }}>
+                  <Text style={{ color: m.accentColor ?? T.yellow, fontSize: 11, fontWeight: '800' }}>Open →</Text>
+                  <Pressable
+                    onPress={(e: GestureResponderEvent) => {
+                      e?.stopPropagation?.();
+                      router.push(`/v2/${id}/trade` as Href);
+                    }}
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: T.border,
+                      backgroundColor: T.bg2,
+                    }}
+                  >
+                    <Text style={{ color: T.text1, fontSize: 11, fontWeight: '700' }}>Pro trade · chart + TP/SL</Text>
+                  </Pressable>
+                </View>
               </Pressable>
             );
           })}

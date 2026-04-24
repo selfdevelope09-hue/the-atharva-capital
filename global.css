@@ -2,6 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (max-width: 768px) {
+  .market-body {
+    flex-direction: column !important;
+  }
+  .chart-area {
+    min-height: min(70vh, 560px) !important;
+    height: auto !important;
+  }
+  .order-panel {
+    width: 100% !important;
+    min-width: unset !important;
+  }
+  .sidebar {
+    display: none;
+  }
+  .main-content {
+    margin-left: 0 !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0a14;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a3e;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a4e;
+}
+
 @layer base {
   /* Match app shell (Exness-style) — beats Expo’s default white/black body before JS hydrates (avoids blank flash on Vercel). */
   html,

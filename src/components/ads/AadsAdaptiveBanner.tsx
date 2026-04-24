@@ -18,12 +18,14 @@ export function AadsAdaptiveBanner({ widthPct = 70 }: { widthPct?: number }) {
 
     const frame = document.createElement('div');
     frame.id = 'frame';
-    frame.style.cssText = 'width:100%;margin:auto;position:relative;z-index:99998;';
+    frame.style.cssText = `width:${widthPct}%;max-width:100%;margin:auto;position:relative;z-index:99998;`;
 
     const iframe = document.createElement('iframe');
     iframe.setAttribute('data-aa', '2435144');
     iframe.src = IFRAME_SRC;
-    iframe.style.cssText = `border:0;padding:0;width:${widthPct}%;height:auto;min-height:60px;overflow:hidden;display:block;margin:auto`;
+    iframe.style.cssText =
+      'border:0;padding:0;width:100%;height:auto;overflow:hidden;display:block;pointer-events:auto;';
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
     iframe.setAttribute('title', 'Advertisement');
     iframe.setAttribute('loading', 'lazy');
 

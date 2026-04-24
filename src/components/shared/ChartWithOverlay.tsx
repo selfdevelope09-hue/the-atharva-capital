@@ -281,8 +281,8 @@ export function ChartWithOverlay(props: ChartWithOverlayProps) {
           cbDiscard={cbDiscard}
         />
       ) : (
-        <View style={{ flex: 1 }}>
-          <NativeWebBlock html={nativeChartHtml} frameBg={frameBg} />
+        <View style={{ width: '100%', height }}>
+          <NativeWebBlock html={nativeChartHtml} frameBg={frameBg} height={height} />
           <NativeTpSlOverlay
             entry={tpsl.entry}
             takeProfit={tp}
@@ -880,19 +880,18 @@ function WebChartBlock({
       dragRef.current = null;
     };
 
-    /* ── Click handler for confirm / discard buttons ── */
-    const onClick = (e: MouseEvent) => {
+    /* ── Tap / click on confirm / discard (pointer + mouse; touch `click` can be blocked by preventDefault on touchstart) ── */
+    const hitTestButtons = (clientX: number, clientY: number) => {
       const pt = preTradeRef.current;
       if (!pt.mode) return;
 
-      // Only treat as click if mouse didn't drag far
-      const dx = Math.abs(e.clientX - mouseDownPosRef.current.x);
-      const dy = Math.abs(e.clientY - mouseDownPosRef.current.y);
+      const dx = Math.abs(clientX - mouseDownPosRef.current.x);
+      const dy = Math.abs(clientY - mouseDownPosRef.current.y);
       if (dx > 6 || dy > 6) return;
 
       const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
 
       const cb = confirmBtnRef.current;
       if (cb && x >= cb.x && x <= cb.x + cb.w && y >= cb.y && y <= cb.y + cb.h) {
@@ -902,13 +901,26 @@ function WebChartBlock({
       const db = discardBtnRef.current;
       if (db && x >= db.x && x <= db.x + db.w && y >= db.y && y <= db.y + db.h) {
         cbDiscard.current?.();
-        return;
       }
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      hitTestButtons(e.clientX, e.clientY);
+    };
+
+    /** Legacy mouse-only envs without PointerEvent */
+    const onClick = (e: MouseEvent) => {
+      hitTestButtons(e.clientX, e.clientY);
     };
 
     canvas.addEventListener('mousedown', onDown);
     canvas.addEventListener('touchstart', onDown, { passive: false });
-    canvas.addEventListener('click', onClick);
+    if (typeof PointerEvent !== 'undefined') {
+      canvas.addEventListener('pointerup', onPointerUp);
+    } else {
+      canvas.addEventListener('click', onClick);
+    }
     window.addEventListener('mousemove', onMoveWin);
     window.addEventListener('mouseup', onUp);
     window.addEventListener('touchmove', onMoveWin, { passive: false });
@@ -937,7 +949,11 @@ function WebChartBlock({
       ro.disconnect();
       canvas.removeEventListener('mousedown', onDown);
       canvas.removeEventListener('touchstart', onDown);
-      canvas.removeEventListener('click', onClick);
+      if (typeof PointerEvent !== 'undefined') {
+        canvas.removeEventListener('pointerup', onPointerUp);
+      } else {
+        canvas.removeEventListener('click', onClick);
+      }
       window.removeEventListener('mousemove', onMoveWin);
       window.removeEventListener('mouseup', onUp);
       window.removeEventListener('touchmove', onMoveWin);
@@ -984,18 +1000,20 @@ function WebChartBlock({
 
 /* ─── Native WebView block ──────────────────────────────────────────────────── */
 
-type NativeWebBlockProps = { html: string; frameBg: string };
+type NativeWebBlockProps = { html: string; frameBg: string; height: number };
 
-function NativeWebBlock({ html, frameBg }: NativeWebBlockProps) {
+function NativeWebBlock({ html, frameBg, height }: NativeWebBlockProps) {
   return (
     <WebView
       source={{ html, baseUrl: 'https://www.tradingview.com' }}
-      style={{ flex: 1, backgroundColor: frameBg }}
+      style={{ width: '100%', height, minHeight: height, flex: 1, backgroundColor: frameBg }}
       javaScriptEnabled
       domStorageEnabled
       allowsInlineMediaPlayback
       startInLoadingState={false}
       originWhitelist={['*']}
+      androidLayerType="hardware"
+      nestedScrollEnabled={false}
     />
   );
 }

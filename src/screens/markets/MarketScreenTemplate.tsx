@@ -81,7 +81,10 @@ export default function MarketScreenTemplate({ marketId, title }: MarketScreenTe
   const router = useRouter();
   const { width, height: winH } = useWindowDimensions();
   const isMobile = width < ORDER_SHEET_BREAKPOINT;
-  const chartMinH = isMobile ? 320 : Math.min(560, Math.max(500, Math.floor(winH * 0.45)));
+  /** Mobile: use ~45–50% of viewport height so the chart is usable (min 380). */
+  const chartMinH = isMobile
+    ? Math.min(580, Math.max(380, Math.floor(winH * 0.48)))
+    : Math.min(560, Math.max(500, Math.floor(winH * 0.45)));
 
   const cfg = CFG[marketId];
   const symbols = MARKET_SYMBOLS[marketId] ?? [];

@@ -54,6 +54,10 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
   }, [sheetOpen]);
 
   const isDesktop = screenW >= 960;
+  /** Taller on phones: ~50% of viewport, clamped (was 36% + max 440, too short). */
+  const mobileChartHeight = isDesktop
+    ? 0
+    : Math.min(580, Math.max(380, Math.round(screenH * 0.52)));
   const fullSymbol =
     market.dataSource === 'binance_websocket' ? ticker : toYahooFullSymbol(market, ticker);
   const { ticks } = useMarketPrices();
@@ -184,7 +188,7 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
       height={
         isDesktop
           ? Math.min(720, Math.max(480, screenH * 0.52))
-          : Math.min(440, Math.max(300, screenH * 0.36))
+          : mobileChartHeight
       }
       /* Pre-trade props */
       preTradeMode={preTradeMode}
@@ -312,36 +316,31 @@ export function TradeScreen({ market, ticker, balance: balanceProp }: TradeScree
         </View>
       ) : (
         <View style={{ flex: 1, minHeight: 0 }}>
-          <ScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={{
-              paddingHorizontal: 16,
-              paddingTop: 12,
-              paddingBottom: 96,
-              gap: 14,
+          {/*
+            Keep chart *outside* a vertical ScrollView so the TradingView iframe / canvas
+            get a stable height and touch/scroll (mobile web) work reliably.
+          */}
+          <View style={{ paddingHorizontal: 16, paddingTop: 12, flexShrink: 0, width: '100%' }}>{chart}</View>
+          <View
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: 12,
+              marginTop: 8,
+              marginHorizontal: 8,
+              borderTopWidth: 1,
+              borderBottomWidth: 1,
+              borderColor: T.border,
+              backgroundColor: T.bg1,
+              borderRadius: T.radiusMd,
+              flexShrink: 0,
             }}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
           >
-            {chart}
-            <View
-              style={{
-                paddingVertical: 10,
-                borderTopWidth: 1,
-                borderBottomWidth: 1,
-                borderColor: T.border,
-                backgroundColor: T.bg1,
-                marginHorizontal: -4,
-                paddingHorizontal: 12,
-                borderRadius: T.radiusMd,
-              }}
-            >
-              <Text style={{ color: T.text3, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 8 }}>
-                SYMBOLS
-              </Text>
-              <PairPicker market={market} activeTicker={ticker} />
-            </View>
-          </ScrollView>
+            <Text style={{ color: T.text3, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, marginBottom: 8 }}>
+              SYMBOLS
+            </Text>
+            <PairPicker market={market} activeTicker={ticker} />
+          </View>
+          <View style={{ flex: 1, minHeight: 8 }} />
           <Pressable
             onPress={() => setSheetOpen(true)}
             accessibilityRole="button"

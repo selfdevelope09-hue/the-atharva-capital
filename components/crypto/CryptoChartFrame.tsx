@@ -13,6 +13,8 @@ export type CryptoChartFrameProps = {
   symbol: string;
   interval?: string;
   theme?: 'dark' | 'light';
+  /** Default 320; raise on phones so the embed has enough vertical space. */
+  minHeight?: number;
   showFullscreen?: boolean;
   onFullscreen?: () => void;
 };
@@ -24,6 +26,7 @@ export function CryptoChartFrame({
   symbol,
   interval = '15',
   theme = 'dark',
+  minHeight = 320,
   showFullscreen = false,
   onFullscreen,
 }: CryptoChartFrameProps) {
@@ -52,6 +55,7 @@ export function CryptoChartFrame({
       <WebAdvancedChart
         embedKey={embedKey}
         embedConfig={embedConfig}
+        minHeight={minHeight}
         showFullscreen={showFullscreen}
         onFullscreen={onFullscreen}
       />
@@ -61,6 +65,7 @@ export function CryptoChartFrame({
     <NativeWebView
       html={html}
       embedKey={embedKey}
+      minHeight={minHeight}
       showFullscreen={showFullscreen}
       onFullscreen={onFullscreen}
     />
@@ -70,11 +75,13 @@ export function CryptoChartFrame({
 function WebAdvancedChart({
   embedKey,
   embedConfig,
+  minHeight,
   showFullscreen,
   onFullscreen,
 }: {
   embedKey: string;
   embedConfig: Record<string, unknown>;
+  minHeight: number;
   showFullscreen: boolean;
   onFullscreen?: () => void;
 }) {
@@ -107,7 +114,7 @@ function WebAdvancedChart({
     <View
       style={{
         flex: 1,
-        minHeight: 320,
+        minHeight,
         width: '100%',
         backgroundColor: CRYPTO_THEME.bg,
         position: 'relative',
@@ -127,17 +134,19 @@ function WebAdvancedChart({
 function NativeWebView({
   html,
   embedKey,
+  minHeight,
   showFullscreen,
   onFullscreen,
 }: {
   html: string;
   embedKey: string;
+  minHeight: number;
   showFullscreen: boolean;
   onFullscreen?: () => void;
 }) {
   return (
     <View
-      style={{ flex: 1, minHeight: 320, width: '100%', backgroundColor: CRYPTO_THEME.bg }}
+      style={{ flex: 1, minHeight, width: '100%', backgroundColor: CRYPTO_THEME.bg }}
       collapsable={false}>
       <WebView
         key={embedKey}
